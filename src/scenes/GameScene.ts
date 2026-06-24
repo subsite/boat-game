@@ -38,6 +38,7 @@ export class GameScene extends Phaser.Scene {
   private hintText!: Phaser.GameObjects.Text;
   private overlay!: Phaser.GameObjects.Rectangle;
 
+  private pressIndicator!: Phaser.GameObjects.Arc;
   private bobTween?: Phaser.Tweens.Tween;
 
   constructor() {
@@ -121,11 +122,17 @@ export class GameScene extends Phaser.Scene {
     const cy = PLAY_HEIGHT + PANEL_HEIGHT / 2;
     this.wheel = this.add.image(cx, cy, "wheel").setDepth(12);
 
+    this.pressIndicator = this.add
+      .circle(0, 0, 38, 0xffffff, 0.28)
+      .setDepth(13)
+      .setVisible(false);
+
     const zone = this.add
       .zone(cx, cy, GAME_WIDTH, PANEL_HEIGHT)
       .setOrigin(0.5)
       .setInteractive();
-    zone.on("pointerdown", () => {
+    zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      this.pressIndicator.setPosition(pointer.x, pointer.y).setVisible(true);
       this.holding = true;
       this.press();
     });
@@ -177,9 +184,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bindInput() {
-    this.input.on("pointerup", () => (this.holding = false));
-    this.input.on("pointerupoutside", () => (this.holding = false));
-    this.input.on("gameout", () => (this.holding = false));
+    const releasePointer = () => {
+      this.holding = false;
+      this.pressIndicator.setVisible(false);
+    };
+    this.input.on("pointerup", releasePointer);
+    this.input.on("pointerupoutside", releasePointer);
+    this.input.on("gameout", releasePointer);
 
     // Switch / keyboard access: many assistive switches emit Space or Enter.
     const kb = this.input.keyboard;
@@ -310,12 +321,11 @@ export class GameScene extends Phaser.Scene {
       this.boat.angle = Phaser.Math.Clamp(body.velocity.y * 0.05, -18, 70);
     }
 
-    // Wheel feedback: pressed = squashed and turning.
-    if (this.holding) {
-      this.wheel.rotation += 0.12;
-      this.wheel.setScale(0.9);
-    } else {
-      this.wheel.setScale(Phaser.Math.Linear(this.wheel.scaleX, 1, 0.2));
+    // Wheel spin is driven by the boat's vertical velocity: CCW when rising, CW when
+    // sinking, slow through zero when changing direction, stopped at boundaries.
+    if (this.state === "playing") {
+      const body = this.boat.body as Body;
+      this.wheel.rotation += (body.velocity.y / MAX_FALL) * 0.12;
     }
   }
 
