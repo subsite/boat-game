@@ -14,42 +14,6 @@ function make(scene: Phaser.Scene, key: string, w: number, h: number, draw: Draw
 }
 
 export function createTextures(scene: Phaser.Scene) {
-  // --- Player boat (76 x 60) ---
-  make(scene, "boat", 76, 60, (g) => {
-    // hull
-    g.fillStyle(0xc0392b, 1);
-    g.fillPoints(
-      [
-        { x: 8, y: 34 },
-        { x: 68, y: 34 },
-        { x: 58, y: 56 },
-        { x: 18, y: 56 },
-      ],
-      true
-    );
-    // deck stripe
-    g.fillStyle(0xf1c40f, 1);
-    g.fillRect(8, 29, 60, 7);
-    // cabin
-    g.fillStyle(0xecf0f1, 1);
-    g.fillRoundedRect(26, 9, 24, 22, 4);
-    // window
-    g.fillStyle(0x2980b9, 1);
-    g.fillCircle(38, 20, 6);
-    // mast + flag
-    g.fillStyle(0x7f5539, 1);
-    g.fillRect(37, 0, 3, 11);
-    g.fillStyle(0x2ecc71, 1);
-    g.fillPoints(
-      [
-        { x: 40, y: 1 },
-        { x: 55, y: 5 },
-        { x: 40, y: 9 },
-      ],
-      true
-    );
-  });
-
   // --- Steering wheel button (150 x 150) ---
   make(scene, "wheel", 150, 150, (g) => {
     const cx = 75;
@@ -168,6 +132,18 @@ export function createTextures(scene: Phaser.Scene) {
     g.fillRect(54, 16, 9, 13);
     g.lineStyle(4, 0x6b4423, 1);
     g.lineBetween(42, 18, 20, 4);
+  });
+
+  // --- Down arrow for start / replay prompt (60 x 56) ---
+  make(scene, "arrow_down", 60, 56, (g) => {
+    // dark outline layer
+    g.fillStyle(0x1c3d5a, 1);
+    g.fillRect(18, 0, 24, 34);
+    g.fillTriangle(0, 30, 60, 30, 30, 56);
+    // gold fill on top
+    g.fillStyle(0xf1c40f, 1);
+    g.fillRect(21, 2, 18, 30);
+    g.fillTriangle(4, 31, 56, 31, 30, 53);
   });
 
   // --- Foam / wave streak (84 x 18) for the top-down water ---

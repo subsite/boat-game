@@ -34,15 +34,20 @@ export class GameScene extends Phaser.Scene {
 
   private score = 0;
   private scoreText!: Phaser.GameObjects.Text;
-  private messageText!: Phaser.GameObjects.Text;
-  private hintText!: Phaser.GameObjects.Text;
-  private overlay!: Phaser.GameObjects.Rectangle;
+  private medalGraphics!: Phaser.GameObjects.Graphics;
+  private medalScoreText!: Phaser.GameObjects.Text;
+  private arrow!: Phaser.GameObjects.Image;
+  private arrowTween?: Phaser.Tweens.Tween;
 
   private pressIndicator!: Phaser.GameObjects.Arc;
   private bobTween?: Phaser.Tweens.Tween;
 
   constructor() {
     super({ key: "GameScene" });
+  }
+
+  preload() {
+    this.load.image("falko", "falko.png");
   }
 
   create() {
@@ -96,14 +101,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildBoat() {
-    this.boat = this.physics.add.sprite(110, PLAY_HEIGHT / 2, "boat").setDepth(5);
+    this.boat = this.physics.add
+      .sprite(110, PLAY_HEIGHT / 2, "falko")
+      .setDisplaySize(140, 48)
+      .setDepth(5);
     const body = this.boat.body as Body;
     body.setGravityY(GRAVITY);
     body.setAllowGravity(false);
     body.setMaxVelocity(0, MAX_FALL);
-    // Slightly smaller hitbox than the art — forgiving collisions.
-    body.setSize(50, 34);
-    body.setOffset(13, 16);
+    // Hitbox covers the main hull only (below superstructure), forgiving collisions.
+    body.setSize(110, 18);
+    body.setOffset(15, 26);
     this.boat.setCollideWorldBounds(true);
   }
 
@@ -139,6 +147,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildHud() {
+    // Score — visible only during play.
     this.scoreText = this.add
       .text(GAME_WIDTH / 2, 58, "0", {
         fontFamily: "Arial, sans-serif",
@@ -149,38 +158,38 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 8,
       })
       .setOrigin(0.5)
-      .setDepth(20);
-
-    this.overlay = this.add
-      .rectangle(GAME_WIDTH / 2, PLAY_HEIGHT / 2, GAME_WIDTH, PLAY_HEIGHT, 0x000000, 0.35)
-      .setDepth(19)
+      .setDepth(20)
       .setVisible(false);
 
-    this.messageText = this.add
-      .text(GAME_WIDTH / 2, PLAY_HEIGHT / 2 - 40, "", {
+    // Gold medal — visible only on game over.
+    const mx = GAME_WIDTH / 2;
+    const my = PLAY_HEIGHT / 2 - 30;
+    this.medalGraphics = this.add.graphics().setDepth(21).setVisible(false);
+    this.medalGraphics.fillStyle(0xb8860b, 1);
+    this.medalGraphics.fillCircle(mx, my, 62);
+    this.medalGraphics.fillStyle(0xffd700, 1);
+    this.medalGraphics.fillCircle(mx, my, 55);
+    this.medalGraphics.lineStyle(3, 0xb8860b, 1);
+    this.medalGraphics.strokeCircle(mx, my, 40);
+
+    this.medalScoreText = this.add
+      .text(mx, my, "", {
         fontFamily: "Arial, sans-serif",
-        fontSize: "44px",
+        fontSize: "56px",
         color: "#ffffff",
         fontStyle: "bold",
-        align: "center",
-        stroke: "#1c3d5a",
+        stroke: "#b8860b",
         strokeThickness: 7,
       })
       .setOrigin(0.5)
-      .setDepth(21);
+      .setDepth(22)
+      .setVisible(false);
 
-    this.hintText = this.add
-      .text(GAME_WIDTH / 2, PLAY_HEIGHT / 2 + 40, "", {
-        fontFamily: "Arial, sans-serif",
-        fontSize: "26px",
-        color: "#ffffff",
-        align: "center",
-        stroke: "#1c3d5a",
-        strokeThickness: 5,
-        wordWrap: { width: GAME_WIDTH - 60 },
-      })
-      .setOrigin(0.5)
-      .setDepth(21);
+    // Bouncing arrow — points at the wheel during ready and game over.
+    this.arrow = this.add
+      .image(GAME_WIDTH / 2, PLAY_HEIGHT - 38, "arrow_down")
+      .setDepth(20)
+      .setVisible(false);
   }
 
   private bindInput() {
@@ -211,10 +220,10 @@ export class GameScene extends Phaser.Scene {
   private enterReady() {
     this.state = "ready";
     this.score = 0;
-    this.scoreText.setText("0");
-    this.overlay.setVisible(true);
-    this.messageText.setText("Set Sail!");
-    this.hintText.setText("Hold the wheel to steer up.\nLet go to sail down.\nWeave around the obstacles!");
+    this.scoreText.setVisible(false);
+    this.medalGraphics.setVisible(false);
+    this.medalScoreText.setVisible(false);
+    this.showArrow();
     this.bobTween = this.tweens.add({
       targets: this.boat,
       y: PLAY_HEIGHT / 2 - 14,
@@ -228,9 +237,9 @@ export class GameScene extends Phaser.Scene {
   private startGame() {
     this.state = "playing";
     this.bobTween?.stop();
-    this.overlay.setVisible(false);
-    this.messageText.setText("");
-    this.hintText.setText("");
+    this.arrowTween?.stop();
+    this.arrow.setVisible(false);
+    this.scoreText.setText("0").setVisible(true);
     (this.boat.body as Body).setAllowGravity(true);
     this.spawnObstacle();
     this.spawnTimer = this.time.addEvent({
@@ -254,11 +263,11 @@ export class GameScene extends Phaser.Scene {
     });
     this.boat.setCollideWorldBounds(false);
 
-    this.overlay.setVisible(true);
-    this.messageText.setText("Good Sailing!");
-    this.hintText.setText(
-      `You passed ${this.score} ${this.score === 1 ? "obstacle" : "obstacles"}.\nPress the wheel to play again.`
-    );
+    this.scoreText.setVisible(false);
+    this.medalScoreText.setText(String(this.score));
+    this.medalGraphics.setVisible(true);
+    this.medalScoreText.setVisible(true);
+    this.showArrow();
 
     this.canRestart = false;
     this.time.delayedCall(700, () => (this.canRestart = true));
@@ -268,6 +277,20 @@ export class GameScene extends Phaser.Scene {
   private press() {
     if (this.state === "ready") this.startGame();
     else if (this.state === "over" && this.canRestart) this.scene.restart();
+  }
+
+  private showArrow() {
+    const baseY = PLAY_HEIGHT - 38;
+    this.arrow.y = baseY;
+    this.arrow.setVisible(true);
+    this.arrowTween = this.tweens.add({
+      targets: this.arrow,
+      y: baseY + 16,
+      duration: 550,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.inOut",
+    });
   }
 
   // ---------------------------------------------------------------- spawning
