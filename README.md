@@ -1,8 +1,8 @@
 # boat-game
 
 A simple, accessibility-minded mobile game: steer a boat to weave around
-free-floating water obstacles (cliffs, lighthouses, row boats), passing each one
-above or below. Built with **Phaser 3** (game) + **Vite/TypeScript** (web) +
+archipelago obstacles (granite skerries, wooded islands, daycruisers and
+freighters), passing each one above or below. Built with **Phaser 3** (game) + **Vite/TypeScript** (web) +
 **Capacitor** (native mobile).
 
 Designed for kids with disabilities:
@@ -39,13 +39,50 @@ npm run cap:ios         # build + sync + open Xcode
 
 `npm run cap:sync` rebuilds the web bundle and copies it into the native projects.
 
+## Releases
+
+Pushing a version tag builds a signed APK in GitHub Actions and publishes it as
+a GitHub Release (`.github/workflows/release.yml`):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+- Tags must be `vMAJOR.MINOR.PATCH`, with MINOR and PATCH below 100. The
+  Android versionCode is `MAJOR*10000 + MINOR*100 + PATCH`, so every release
+  needs a higher version than the last.
+- The workflow generates `android/` fresh (it is gitignored), stamps the
+  version into it, builds, then signs with the release key.
+
+### Signing (one-time setup)
+
+Create a release keystore and **back it up with its passwords** — without it,
+later releases can't update installed copies:
+
+```bash
+keytool -genkeypair -v -keystore boatgame-release.jks -alias boatgame \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 boatgame-release.jks   # value for SIGNING_KEYSTORE_BASE64
+```
+
+Add these repository secrets under Settings → Secrets and variables → Actions:
+`SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD`, `SIGNING_KEY_ALIAS`
+(`boatgame` above) and `SIGNING_KEY_PASSWORD`. The workflow refuses to publish
+without the keystore.
+
+APKs from Android Studio are debug-signed, so uninstall one before installing
+the other.
+
 ## Project layout
 
 ```
 src/
   main.ts            Phaser game bootstrap
   config.ts          Gameplay/layout tuning constants
-  textures.ts        All artwork, generated procedurally (no asset files)
+  textures.ts        Artwork, generated procedurally (except the player boat)
+  sea.ts             Pixel generators for the tileable sea
+  sfx.ts             Synthesised WebAudio sound effects
   scenes/
     GameScene.ts     Boat, obstacles, control, scoring, ready/over flow
 ```

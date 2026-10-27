@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { SEA_TILE, SHEEN_TILE, seaPixels, sheenPixels } from "./sea";
+import { GAME_WIDTH, PANEL_HEIGHT } from "./config";
 
 // All artwork is generated at runtime as textures so the prototype runs with no
 // binary assets. Shapes are kept bold, high-contrast and simple for clarity.
@@ -226,24 +227,158 @@ function drawSkerry(g: Phaser.GameObjects.Graphics, spec: RockSpec) {
 }
 
 export function createTextures(scene: Phaser.Scene) {
-  // --- Steering wheel button (150 x 150) ---
+  // --- Ship's wheel (150 x 150): varnished teak with turned handles and a
+  // brass hub. Shading is symmetric (rounded profiles, no light direction)
+  // because the wheel spins. ---
   make(scene, "wheel", 150, 150, (g) => {
     const cx = 75;
     const cy = 75;
-    const ring = 54;
-    g.lineStyle(13, 0x8b5a2b, 1);
-    g.strokeCircle(cx, cy, ring);
-    g.lineStyle(9, 0x6b4423, 1);
-    for (let i = 0; i < 6; i++) {
-      const a = (Math.PI / 3) * i;
-      g.lineBetween(cx, cy, cx + Math.cos(a) * ring, cy + Math.sin(a) * ring);
-      g.fillStyle(0xa9692f, 1);
-      g.fillCircle(cx + Math.cos(a) * (ring + 11), cy + Math.sin(a) * (ring + 11), 8);
+    const rim = 46;
+    const spokes = 8;
+    const DARK = 0x4a2810;
+    const BASE = 0x7a4520;
+    const LIGHT = 0xb8733a;
+    const SHINE = 0xd9965a;
+    const BRASS = 0xc89a35;
+    const at = (a: number, r: number) => ({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+
+    for (let i = 0; i < spokes; i++) {
+      const a = ((Math.PI * 2) / spokes) * i;
+      const n = a + Math.PI / 2; // normal, for the taper
+      const quad = (r0: number, w0: number, r1: number, w1: number) => {
+        const p0 = at(a, r0);
+        const p1 = at(a, r1);
+        return [
+          { x: p0.x + Math.cos(n) * w0, y: p0.y + Math.sin(n) * w0 },
+          { x: p1.x + Math.cos(n) * w1, y: p1.y + Math.sin(n) * w1 },
+          { x: p1.x - Math.cos(n) * w1, y: p1.y - Math.sin(n) * w1 },
+          { x: p0.x - Math.cos(n) * w0, y: p0.y - Math.sin(n) * w0 },
+        ];
+      };
+      // tapered spoke with a lighter rounded centre
+      g.fillStyle(DARK, 1);
+      g.fillPoints(quad(12, 5, 58, 3.5), true);
+      g.fillStyle(BASE, 1);
+      g.fillPoints(quad(12, 3.8, 58, 2.6), true);
+      g.fillStyle(LIGHT, 1);
+      g.fillPoints(quad(12, 1.2, 58, 0.9), true);
+      // turned handle beyond the rim: neck, groove, bulb, end knob
+      const neck = at(a, 60);
+      const bulb = at(a, 66);
+      const knob = at(a, 71.5);
+      g.fillStyle(DARK, 1);
+      g.fillCircle(neck.x, neck.y, 3.6);
+      g.fillCircle(bulb.x, bulb.y, 5.6);
+      g.fillCircle(knob.x, knob.y, 3.4);
+      g.fillStyle(BASE, 1);
+      g.fillCircle(neck.x, neck.y, 2.6);
+      g.fillCircle(bulb.x, bulb.y, 4.6);
+      g.fillCircle(knob.x, knob.y, 2.5);
+      g.fillStyle(SHINE, 1);
+      g.fillCircle(bulb.x, bulb.y, 1.8);
+      g.fillCircle(knob.x, knob.y, 1);
     }
-    g.fillStyle(0xc8852b, 1);
-    g.fillCircle(cx, cy, 15);
-    g.fillStyle(0x6b4423, 1);
-    g.fillCircle(cx, cy, 6);
+
+    // rim: dark edges, rounded lighter crown, thin shine line
+    g.lineStyle(13, DARK, 1);
+    g.strokeCircle(cx, cy, rim);
+    g.lineStyle(10, BASE, 1);
+    g.strokeCircle(cx, cy, rim);
+    g.lineStyle(4, LIGHT, 1);
+    g.strokeCircle(cx, cy, rim);
+    g.lineStyle(1, SHINE, 0.9);
+    g.strokeCircle(cx, cy, rim + 0.5);
+    // seams between the rim segments, brass pins where the spokes go through
+    g.lineStyle(1.5, DARK, 0.9);
+    for (let i = 0; i < spokes; i++) {
+      const a = ((Math.PI * 2) / spokes) * (i + 0.5);
+      const p0 = at(a, rim - 5.5);
+      const p1 = at(a, rim + 5.5);
+      g.lineBetween(p0.x, p0.y, p1.x, p1.y);
+      const pin = at(((Math.PI * 2) / spokes) * i, rim);
+      g.fillStyle(BRASS, 1);
+      g.fillCircle(pin.x, pin.y, 1.8);
+    }
+
+    // hub: wooden boss, brass cap, centre bolt
+    g.fillStyle(DARK, 1);
+    g.fillCircle(cx, cy, 17);
+    g.fillStyle(0x8a6316, 1);
+    g.fillCircle(cx, cy, 13.5);
+    g.fillStyle(BRASS, 1);
+    g.fillCircle(cx, cy, 12);
+    g.fillStyle(0xe6c060, 1);
+    g.fillCircle(cx, cy, 8);
+    g.fillStyle(0x6b4c12, 1);
+    g.fillCircle(cx, cy, 4);
+    g.fillStyle(0xf2dc9a, 1);
+    g.fillCircle(cx - 1, cy - 1, 1.2);
+  });
+
+  // --- Pier deck (GAME_WIDTH x PANEL_HEIGHT): weathered grey-brown boards
+  // with gaps, grain, knots, butt joints and nail rows over the joists ---
+  make(scene, "pier", GAME_WIDTH, PANEL_HEIGHT, (g) => {
+    const H = PANEL_HEIGHT;
+    const top = 12; // fascia beam along the water edge
+    const joists = [top + 26, H - 30];
+    const tones = [0x8a7a66, 0x7f705e, 0x948470, 0x857360, 0x8f7c66];
+    g.fillStyle(0x2a2119, 1);
+    g.fillRect(0, 0, GAME_WIDTH, H);
+
+    const nail = (x: number, y: number) => {
+      g.fillStyle(0x6a3f22, 0.3);
+      g.fillCircle(x + 0.5, y + 1, 3);
+      g.fillStyle(0x3a3a3a, 1);
+      g.fillCircle(x, y, 1.7);
+      g.fillStyle(0x9a9a9a, 1);
+      g.fillCircle(x - 0.5, y - 0.5, 0.6);
+    };
+
+    for (let x = 0; x < GAME_WIDTH; ) {
+      const w = Phaser.Math.Between(38, 50);
+      // some boards are two lengths butted together
+      const joint = Math.random() < 0.35 ? Phaser.Math.Between(top + 40, H - 40) : -1;
+      const pieces = joint > 0 ? [[top, joint - 1], [joint + 1, H]] : [[top, H]];
+      for (const [y0, y1] of pieces) {
+        g.fillStyle(Phaser.Utils.Array.GetRandom(tones), 1);
+        g.fillRect(x, y0, w - 2, y1 - y0);
+        // grain: wavy darker lines and a few lighter streaks
+        for (let k = 0; k < 6; k++) {
+          const gx = x + 3 + Math.random() * (w - 8);
+          const pts: Phaser.Types.Math.Vector2Like[] = [];
+          for (let y = y0; y <= y1; y += 8) pts.push({ x: gx + Math.sin(y * 0.05 + k) * 1.2, y });
+          g.lineStyle(1, k % 3 === 0 ? 0xa39480 : 0x6b5d4c, k % 3 === 0 ? 0.35 : 0.5);
+          g.strokePoints(pts, false);
+        }
+        // occasional knot
+        if (Math.random() < 0.4) {
+          const kx = x + Phaser.Math.Between(8, w - 10);
+          const ky = Phaser.Math.Between(y0 + 10, y1 - 10);
+          g.fillStyle(0x5a4a3a, 1);
+          g.fillEllipse(kx, ky, 5, 8);
+          g.lineStyle(1, 0x6b5d4c, 0.7);
+          g.strokeEllipse(kx, ky, 9, 14);
+        }
+        // nails each side of a butt joint
+        if (joint > 0) {
+          nail(x + 8, y0 === top ? joint - 6 : joint + 6);
+          nail(x + w - 10, y0 === top ? joint - 6 : joint + 6);
+        }
+      }
+      for (const jy of joists) {
+        nail(x + 8, jy);
+        nail(x + w - 10, jy);
+      }
+      x += w;
+    }
+
+    // fascia beam with a lit top edge and a shadow line under it
+    g.fillStyle(0x5e4c3a, 1);
+    g.fillRect(0, 0, GAME_WIDTH, top);
+    g.fillStyle(0x9c8a72, 1);
+    g.fillRect(0, 0, GAME_WIDTH, 2);
+    g.fillStyle(0x2a2119, 1);
+    g.fillRect(0, top - 2, GAME_WIDTH, 2);
   });
 
   // --- Granite skerries and wooded islets, see ROCKS ---
@@ -425,12 +560,13 @@ export function createTextures(scene: Phaser.Scene) {
   if (!scene.textures.exists("sea")) makeCanvas(scene, "sea", SEA_TILE, SEA_TILE, seaPixels());
   if (!scene.textures.exists("sea_sheen")) makeCanvas(scene, "sea_sheen", SHEEN_TILE, SHEEN_TILE, sheenPixels());
 
-  // --- Soft foam puff (24 x 24) for the sinking splash ---
-  make(scene, "foam", 24, 24, (g) => {
-    for (let r = 12; r > 0; r -= 2) {
-      g.fillStyle(0xffffff, 0.18);
-      g.fillCircle(12, 12, r);
-    }
+  // --- Water droplet (10 x 10) for the sinking splash: hard-edged so it
+  // reads as water, not smoke ---
+  make(scene, "droplet", 10, 10, (g) => {
+    g.fillStyle(0xcfe3ec, 1);
+    g.fillCircle(5, 5, 4.5);
+    g.fillStyle(0xffffff, 1);
+    g.fillCircle(4.2, 4.2, 3);
   });
 
   // --- Foam ring (128 x 128) spreading out where the boat goes down ---

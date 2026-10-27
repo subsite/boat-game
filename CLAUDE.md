@@ -21,7 +21,10 @@ cannot be live click-tested here; rely on the build and on the user running
 `npm run dev` on the host.
 
 Native projects (`android/`, `ios/`) are gitignored and generated on the host
-with `npx cap add android|ios`. Capacitor commands and Docker are not available
+with `npx cap add android|ios`. Release APKs are built by
+`.github/workflows/release.yml` on pushing a `vX.Y.Z` tag: it runs
+`npx cap add android` itself, stamps versionCode/versionName into the
+generated `build.gradle`, and signs with keystore secrets (see README). Capacitor commands and Docker are not available
 in the container (see global instructions) — the user runs those.
 
 ## Architecture
@@ -43,9 +46,9 @@ when changing anything.
   the tileable `sea` / `sea_sheen` and the `wave_N` froth patches). Keys: `wheel`, one
   per `ROCKS` entry (side-view granite skerries and spruce/pine islands of
   several sizes, weighted; `rockLayout` gives canvas size and waterline),
-  `daycruiser`, `freighter`, `arrow_down`, `wave_0..N` (`FROTH_VARIANTS`),
+  `daycruiser`, `freighter`, `pier` (deck boards), `droplet` (splash), `arrow_down`, `wave_0..N` (`FROTH_VARIANTS`),
   `sea`, `sea_sheen`,
-  `foam`, `foam_ring`. Add new art
+  `foam_ring`. Add new art
   here, not as an image import. The one exception is the player boat,
   `public/falko.png` (loaded as `falko`).
 - `src/sea.ts` — pure (Phaser-free) pixel generators for the dark Baltic sea

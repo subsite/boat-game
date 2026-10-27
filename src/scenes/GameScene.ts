@@ -68,6 +68,7 @@ export class GameScene extends Phaser.Scene {
 
   private boat!: Phaser.Physics.Arcade.Sprite;
   private wheel!: Phaser.GameObjects.Image;
+  private wheelShadow!: Phaser.GameObjects.Image;
   private hazards!: Phaser.Physics.Arcade.Group;
   private ripples: Phaser.GameObjects.Image[] = [];
   private seaBase!: Phaser.GameObjects.TileSprite;
@@ -307,17 +308,12 @@ export class GameScene extends Phaser.Scene {
 
   private buildControl() {
     // The whole bottom deck is the single control — a large, easy target.
-    this.add
-      .rectangle(0, PLAY_HEIGHT, GAME_WIDTH, PANEL_HEIGHT, 0x6b4423)
-      .setOrigin(0)
-      .setDepth(10);
-    this.add
-      .rectangle(0, PLAY_HEIGHT, GAME_WIDTH, 6, 0x8b5a2b)
-      .setOrigin(0)
-      .setDepth(11);
+    this.add.image(0, PLAY_HEIGHT, "pier").setOrigin(0).setDepth(10);
 
     const cx = GAME_WIDTH / 2;
     const cy = PLAY_HEIGHT + PANEL_HEIGHT / 2;
+    // Dark copy of the wheel offset as a shadow, so it stands off the boards.
+    this.wheelShadow = this.add.image(cx + 5, cy + 6, "wheel").setTint(0x000000).setAlpha(0.4).setDepth(11);
     this.wheel = this.add.image(cx, cy, "wheel").setDepth(12);
 
     this.pressIndicator = this.add
@@ -478,30 +474,55 @@ export class GameScene extends Phaser.Scene {
   private sinkBoat(onDone: () => void) {
     const { x, y } = this.boat;
 
-    const splash = this.add
-      .particles(0, 0, "foam", {
-        speed: { min: 40, max: 170 },
-        scale: { start: 2, end: 0.3 },
-        alpha: { start: 0.9, end: 0 },
-        lifespan: 1300,
+    const waterline = y + 16;
+
+    // Water thrown up from the hull: a tall column of droplets that arcs up
+    // and falls back under gravity, plus lower, wider side spray.
+    const jets = this.add
+      .particles(0, 0, "droplet", {
+        x: { min: -50, max: 50 },
+        angle: { min: 245, max: 295 },
+        speed: { min: 220, max: 460 },
+        gravityY: 750,
+        scale: { min: 0.6, max: 1.4 },
+        alpha: { start: 1, end: 0, ease: "Quad.in" },
+        lifespan: { min: 1000, max: 1500 },
         emitting: false,
       })
       .setDepth(6);
-    splash.explode(32, x, y);
+    const spray = this.add
+      .particles(0, 0, "droplet", {
+        x: { min: -60, max: 60 },
+        angle: { min: 200, max: 340 },
+        speed: { min: 110, max: 260 },
+        gravityY: 750,
+        scale: { min: 0.35, max: 0.8 },
+        alpha: { start: 1, end: 0, ease: "Quad.in" },
+        lifespan: { min: 700, max: 1100 },
+        emitting: false,
+      })
+      .setDepth(6);
+    jets.explode(70, x, waterline);
+    spray.explode(45, x, waterline);
     // a smaller second surge as the hull goes under
-    this.time.delayedCall(450, () => splash.explode(18, this.boat.x, this.boat.y));
+    this.time.delayedCall(450, () => {
+      jets.explode(30, this.boat.x, waterline + 6);
+      spray.explode(25, this.boat.x, waterline + 6);
+    });
 
-    // Foam churning along the hull as it goes under.
+    // White water churning flat along the waterline as the hull goes under.
     const churn = this.add
-      .particles(0, 0, "foam", {
+      .particles(0, 0, "wave_0", {
         x: { min: -55, max: 55 },
-        y: { min: -8, max: 12 },
-        speed: { min: 15, max: 60 },
-        scale: { start: 1.3, end: 0 },
-        alpha: { start: 0.75, end: 0 },
-        lifespan: 900,
-        frequency: 40,
-        quantity: 3,
+        y: { min: 10, max: 20 },
+        speedX: { min: -40, max: 40 },
+        speedY: { min: -6, max: 6 },
+        scaleX: { start: 0.8, end: 1.8 },
+        scaleY: { start: 0.7, end: 1.2 },
+        alpha: { start: 0.9, end: 0 },
+        lifespan: 1100,
+        frequency: 60,
+        quantity: 2,
       })
       .setDepth(6);
     churn.startFollow(this.boat);
@@ -746,6 +767,7 @@ export class GameScene extends Phaser.Scene {
     if (this.state === "playing") {
       const body = this.boat.body as Body;
       this.wheel.rotation += (body.velocity.y / MAX_FALL) * 0.12;
+      this.wheelShadow.rotation = this.wheel.rotation;
     }
   }
 
