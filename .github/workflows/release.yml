@@ -42,15 +42,24 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))" >> "$GITHUB_ENV"
 
-      - name: Decode signing keystore
+      - name: Decode and check signing keystore
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
         run: |
           if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
             echo "SIGNING_KEYSTORE_BASE64 secret is missing; refusing to publish an unsigned build" >&2
             exit 1
           fi
-          echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          # -i skips stray whitespace/line breaks picked up when pasting the secret.
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 -d -i > "$RUNNER_TEMP/release.jks"
+          echo "Decoded keystore: $(stat -c %s "$RUNNER_TEMP/release.jks") bytes"
+          # Fail fast (before the long build) if the keystore, password or alias is wrong.
+          if ! keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass:env SIGNING_KEYSTORE_PASSWORD -alias "$SIGNING_KEY_ALIAS" > /dev/null; then
+            echo "Keystore check failed: re-create SIGNING_KEYSTORE_BASE64 (see README) and check the password and alias secrets" >&2
+            exit 1
+          fi
 
       - name: Build web bundle
         run: |

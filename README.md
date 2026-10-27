@@ -66,6 +66,13 @@ keytool -genkeypair -v -keystore boatgame-release.jks -alias boatgame \
 base64 -w0 boatgame-release.jks   # value for SIGNING_KEYSTORE_BASE64
 ```
 
+Copy-pasting the base64 text is easy to truncate; with the GitHub CLI you can
+set the secret straight from the file instead:
+
+```bash
+base64 -w0 boatgame-release.jks | gh secret set SIGNING_KEYSTORE_BASE64
+```
+
 Add these repository secrets under Settings → Secrets and variables → Actions:
 `SIGNING_KEYSTORE_BASE64`, `SIGNING_KEYSTORE_PASSWORD`, `SIGNING_KEY_ALIAS`
 (`boatgame` above) and `SIGNING_KEY_PASSWORD`. The workflow refuses to publish
