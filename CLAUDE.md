@@ -46,7 +46,7 @@ when changing anything.
   the tileable `sea` / `sea_sheen` and the `wave_N` froth patches). Keys: `wheel`, one
   per `ROCKS` entry (side-view granite skerries and spruce/pine islands of
   several sizes, weighted; `rockLayout` gives canvas size and waterline),
-  `daycruiser`, `freighter`, `pier` (deck boards), `droplet` (splash), `arrow_down`, `wave_0..N` (`FROTH_VARIANTS`),
+  `daycruiser`, `freighter`, `dash` (teak dashboard; instrument positions in `DASH_GAUGES`), `compass_card`, `compass_glass`, `rev_needle`, `droplet` (splash), `arrow_down`, `wave_0..N` (`FROTH_VARIANTS`),
   `sea`, `sea_sheen`,
   `foam_ring`. Add new art
   here, not as an image import. The one exception is the player boat,

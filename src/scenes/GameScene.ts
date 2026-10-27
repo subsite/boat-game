@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { createTextures, ROCKS, rockLayout, FROTH_VARIANTS } from "../textures";
+import { createTextures, ROCKS, rockLayout, FROTH_VARIANTS, DASH_GAUGES } from "../textures";
 import { playBloink, playSink } from "../sfx";
 import {
   GAME_WIDTH,
@@ -69,6 +69,9 @@ export class GameScene extends Phaser.Scene {
   private boat!: Phaser.Physics.Arcade.Sprite;
   private wheel!: Phaser.GameObjects.Image;
   private wheelShadow!: Phaser.GameObjects.Image;
+  private compassCard!: Phaser.GameObjects.Image;
+  private revNeedle!: Phaser.GameObjects.Image;
+  private revAngle = 135; // tracked here: Phaser wraps .angle to ±180, the dial sweeps 135..405
   private hazards!: Phaser.Physics.Arcade.Group;
   private ripples: Phaser.GameObjects.Image[] = [];
   private seaBase!: Phaser.GameObjects.TileSprite;
@@ -300,6 +303,20 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Gentle instrument life: the compass card swings slowly against the boat's
+   * heading (its tilt), and the rev counter rises while the control is held.
+   */
+  private updateInstruments() {
+    const heading = this.state === "playing" ? this.boat.angle : 0;
+    this.compassCard.angle += (-heading * 1.5 - this.compassCard.angle) * 0.05;
+    const revs =
+      this.state === "over" ? 0 : this.state === "playing" && this.held.size > 0 ? 0.75 : this.state === "docked" ? 0.1 : 0.3;
+    const target = 135 + revs * 270;
+    this.revAngle += (target - this.revAngle) * 0.06;
+    this.revNeedle.angle = this.revAngle;
+  }
+
   /** WebAudio context for synthesised sounds, or undefined if muted/unavailable. */
   private audio() {
     if (this.sound.mute || !(this.sound instanceof Phaser.Sound.WebAudioSoundManager)) return undefined;
@@ -308,7 +325,16 @@ export class GameScene extends Phaser.Scene {
 
   private buildControl() {
     // The whole bottom deck is the single control — a large, easy target.
-    this.add.image(0, PLAY_HEIGHT, "pier").setOrigin(0).setDepth(10);
+    this.add.image(0, PLAY_HEIGHT, "dash").setOrigin(0).setDepth(10);
+    const { compass, rev } = DASH_GAUGES;
+    this.compassCard = this.add.image(compass.x, PLAY_HEIGHT + compass.y, "compass_card").setDepth(10.5);
+    this.add.image(compass.x, PLAY_HEIGHT + compass.y, "compass_glass").setDepth(10.6);
+    this.revNeedle = this.add
+      .image(rev.x, PLAY_HEIGHT + rev.y, "rev_needle")
+      .setOrigin(6 / 80, 0.5)
+      .setAngle(135)
+      .setDepth(10.5);
+    this.revAngle = 135;
 
     const cx = GAME_WIDTH / 2;
     const cy = PLAY_HEIGHT + PANEL_HEIGHT / 2;
@@ -769,6 +795,7 @@ export class GameScene extends Phaser.Scene {
       this.wheel.rotation += (body.velocity.y / MAX_FALL) * 0.12;
       this.wheelShadow.rotation = this.wheel.rotation;
     }
+    this.updateInstruments();
   }
 
   private updateScoreAndCull() {

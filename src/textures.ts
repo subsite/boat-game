@@ -2,6 +2,15 @@ import Phaser from "phaser";
 import { SEA_TILE, SHEEN_TILE, seaPixels, sheenPixels } from "./sea";
 import { GAME_WIDTH, PANEL_HEIGHT } from "./config";
 
+// Instrument positions on the dashboard, relative to its top-left corner;
+// shared with the scene, which places the moving parts on top.
+export const DASH_GAUGES = {
+  compass: { x: 76, y: 84, r: 44 },
+  rev: { x: 372, y: 62, r: 34 },
+  fuel: { x: 346, y: 128, r: 17 },
+  temp: { x: 400, y: 128, r: 17 },
+};
+
 // All artwork is generated at runtime as textures so the prototype runs with no
 // binary assets. Shapes are kept bold, high-contrast and simple for clarity.
 
@@ -315,70 +324,148 @@ export function createTextures(scene: Phaser.Scene) {
     g.fillCircle(cx - 1, cy - 1, 1.2);
   });
 
-  // --- Pier deck (GAME_WIDTH x PANEL_HEIGHT): weathered grey-brown boards
-  // with gaps, grain, knots, butt joints and nail rows over the joists ---
-  make(scene, "pier", GAME_WIDTH, PANEL_HEIGHT, (g) => {
+  // --- Dashboard (GAME_WIDTH x PANEL_HEIGHT): a plain varnished teak panel
+  // like a vintage motor yacht's, with brass-bezelled, dark-faced instruments. The
+  // moving parts (compass card, rev counter needle) are separate textures. ---
+  make(scene, "dash", GAME_WIDTH, PANEL_HEIGHT, (g) => {
     const H = PANEL_HEIGHT;
-    const top = 12; // fascia beam along the water edge
-    const joists = [top + 26, H - 30];
-    const tones = [0x8a7a66, 0x7f705e, 0x948470, 0x857360, 0x8f7c66];
-    g.fillStyle(0x2a2119, 1);
+    // Darker oiled teak than the wheel, so the wheel stands out against it.
+    g.fillStyle(0x5a3418, 1);
     g.fillRect(0, 0, GAME_WIDTH, H);
+    // long horizontal grain: fine wavy lines, a few broad darker streaks
+    for (let i = 0; i < 70; i++) {
+      const y0 = Math.random() * H;
+      const amp = Phaser.Math.FloatBetween(0.5, 2.5);
+      const freq = Phaser.Math.FloatBetween(0.004, 0.012);
+      const phase = Math.random() * Math.PI * 2;
+      const pts: Phaser.Types.Math.Vector2Like[] = [];
+      for (let x = 0; x <= GAME_WIDTH; x += 10) pts.push({ x, y: y0 + Math.sin(x * freq + phase) * amp });
+      const dark = Math.random() < 0.6;
+      g.lineStyle(Phaser.Math.FloatBetween(0.6, 1.6), dark ? 0x3e220e : 0x7a4a26, Phaser.Math.FloatBetween(0.25, 0.6));
+      g.strokePoints(pts, false);
+    }
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle(0x3e220e, 0.18);
+      g.fillRect(0, Math.random() * H, GAME_WIDTH, Phaser.Math.Between(6, 14));
+    }
+    // varnish sheen: a soft lighter band near the top
+    for (let i = 0; i < 6; i++) {
+      g.fillStyle(0xffffff, 0.025);
+      g.fillRect(0, 14 + i * 3, GAME_WIDTH, 24 - i * 6);
+    }
+    // brass strip along the water edge, dark shadow line under it
+    g.fillStyle(0x8a6316, 1);
+    g.fillRect(0, 0, GAME_WIDTH, 7);
+    g.fillStyle(0xd4a537, 1);
+    g.fillRect(0, 1, GAME_WIDTH, 2);
+    g.fillStyle(0x24140a, 1);
+    g.fillRect(0, 7, GAME_WIDTH, 2);
 
-    const nail = (x: number, y: number) => {
-      g.fillStyle(0x6a3f22, 0.3);
-      g.fillCircle(x + 0.5, y + 1, 3);
-      g.fillStyle(0x3a3a3a, 1);
-      g.fillCircle(x, y, 1.7);
-      g.fillStyle(0x9a9a9a, 1);
-      g.fillCircle(x - 0.5, y - 0.5, 0.6);
+    const bezel = (x: number, y: number, r: number) => {
+      g.fillStyle(0x000000, 0.35);
+      g.fillCircle(x + 2, y + 3, r + 6);
+      // polished brass: dark outer edge, lit crown, darker inner lip
+      g.fillStyle(0x6b4c12, 1);
+      g.fillCircle(x, y, r + 6);
+      g.fillStyle(0xb8862b, 1);
+      g.fillCircle(x, y, r + 5);
+      g.fillStyle(0xe6c060, 1);
+      g.fillCircle(x - 1, y - 1, r + 3);
+      g.fillStyle(0x8a6316, 1);
+      g.fillCircle(x, y, r + 1.5);
+    };
+    const ticks = (x: number, y: number, r: number, from: number, to: number, n: number, len: number) => {
+      g.lineStyle(1.5, 0xf1ead8, 1);
+      for (let i = 0; i <= n; i++) {
+        const a = Phaser.Math.DegToRad(from + ((to - from) * i) / n);
+        g.lineBetween(x + Math.cos(a) * r, y + Math.sin(a) * r, x + Math.cos(a) * (r - len), y + Math.sin(a) * (r - len));
+      }
+    };
+    const needle = (x: number, y: number, r: number, deg: number) => {
+      const a = Phaser.Math.DegToRad(deg);
+      g.lineStyle(2, 0xf1ead8, 1);
+      g.lineBetween(x, y, x + Math.cos(a) * r * 0.75, y + Math.sin(a) * r * 0.75);
+      g.fillStyle(0xb8862b, 1);
+      g.fillCircle(x, y, 2.5);
     };
 
-    for (let x = 0; x < GAME_WIDTH; ) {
-      const w = Phaser.Math.Between(38, 50);
-      // some boards are two lengths butted together
-      const joint = Math.random() < 0.35 ? Phaser.Math.Between(top + 40, H - 40) : -1;
-      const pieces = joint > 0 ? [[top, joint - 1], [joint + 1, H]] : [[top, H]];
-      for (const [y0, y1] of pieces) {
-        g.fillStyle(Phaser.Utils.Array.GetRandom(tones), 1);
-        g.fillRect(x, y0, w - 2, y1 - y0);
-        // grain: wavy darker lines and a few lighter streaks
-        for (let k = 0; k < 6; k++) {
-          const gx = x + 3 + Math.random() * (w - 8);
-          const pts: Phaser.Types.Math.Vector2Like[] = [];
-          for (let y = y0; y <= y1; y += 8) pts.push({ x: gx + Math.sin(y * 0.05 + k) * 1.2, y });
-          g.lineStyle(1, k % 3 === 0 ? 0xa39480 : 0x6b5d4c, k % 3 === 0 ? 0.35 : 0.5);
-          g.strokePoints(pts, false);
-        }
-        // occasional knot
-        if (Math.random() < 0.4) {
-          const kx = x + Phaser.Math.Between(8, w - 10);
-          const ky = Phaser.Math.Between(y0 + 10, y1 - 10);
-          g.fillStyle(0x5a4a3a, 1);
-          g.fillEllipse(kx, ky, 5, 8);
-          g.lineStyle(1, 0x6b5d4c, 0.7);
-          g.strokeEllipse(kx, ky, 9, 14);
-        }
-        // nails each side of a butt joint
-        if (joint > 0) {
-          nail(x + 8, y0 === top ? joint - 6 : joint + 6);
-          nail(x + w - 10, y0 === top ? joint - 6 : joint + 6);
-        }
-      }
-      for (const jy of joists) {
-        nail(x + 8, jy);
-        nail(x + w - 10, jy);
-      }
-      x += w;
-    }
+    // compass: brass bezel and dark bowl (its card is the separate "compass_card")
+    bezel(DASH_GAUGES.compass.x, DASH_GAUGES.compass.y, DASH_GAUGES.compass.r);
+    g.fillStyle(0x1a1f24, 1);
+    g.fillCircle(DASH_GAUGES.compass.x, DASH_GAUGES.compass.y, DASH_GAUGES.compass.r);
 
-    // fascia beam with a lit top edge and a shadow line under it
-    g.fillStyle(0x5e4c3a, 1);
-    g.fillRect(0, 0, GAME_WIDTH, top);
-    g.fillStyle(0x9c8a72, 1);
-    g.fillRect(0, 0, GAME_WIDTH, 2);
-    g.fillStyle(0x2a2119, 1);
-    g.fillRect(0, top - 2, GAME_WIDTH, 2);
+    // rev counter: dark face, ticks over a 270 degree sweep, red zone
+    const rev = DASH_GAUGES.rev;
+    bezel(rev.x, rev.y, rev.r);
+    g.fillStyle(0x1a1f24, 1);
+    g.fillCircle(rev.x, rev.y, rev.r);
+    g.lineStyle(4, 0xc0392b, 1);
+    g.beginPath();
+    g.arc(rev.x, rev.y, rev.r - 4, Phaser.Math.DegToRad(10), Phaser.Math.DegToRad(45));
+    g.strokePath();
+    ticks(rev.x, rev.y, rev.r - 2, 135, 405, 10, 6);
+    ticks(rev.x, rev.y, rev.r - 2, 135, 405, 20, 3);
+
+    // fuel and water temperature: small static gauges
+    for (const [gauge, deg] of [
+      [DASH_GAUGES.fuel, 250],
+      [DASH_GAUGES.temp, 285],
+    ] as const) {
+      bezel(gauge.x, gauge.y, gauge.r);
+      g.fillStyle(0x1a1f24, 1);
+      g.fillCircle(gauge.x, gauge.y, gauge.r);
+      ticks(gauge.x, gauge.y, gauge.r - 2, 200, 340, 4, 4);
+      needle(gauge.x, gauge.y, gauge.r, deg);
+    }
+  });
+
+  // --- Compass card (100 x 100): dark card, cream points, N in red ---
+  const card = DASH_GAUGES.compass.r - 3;
+  make(scene, "compass_card", 100, 100, (g) => {
+    const c = 50;
+    g.fillStyle(0x1a1f24, 1);
+    g.fillCircle(c, c, card);
+    g.lineStyle(1, 0xf1ead8, 1);
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      const len = i % 9 === 0 ? 7 : i % 3 === 0 ? 4 : 2;
+      g.lineBetween(c + Math.cos(a) * card, c + Math.sin(a) * card, c + Math.cos(a) * (card - len), c + Math.sin(a) * (card - len));
+    }
+    // star: 4 long cardinal points (north red), 4 short intercardinal
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+      const len = i % 2 === 0 ? card - 9 : card * 0.45;
+      const w = i % 2 === 0 ? 5 : 3;
+      const tip = { x: c + Math.cos(a) * len, y: c + Math.sin(a) * len };
+      const l = { x: c + Math.cos(a - Math.PI / 2) * w, y: c + Math.sin(a - Math.PI / 2) * w };
+      const r = { x: c + Math.cos(a + Math.PI / 2) * w, y: c + Math.sin(a + Math.PI / 2) * w };
+      g.fillStyle(i === 0 ? 0xe74c3c : 0xf1ead8, 1);
+      g.fillTriangle(l.x, l.y, r.x, r.y, tip.x, tip.y);
+    }
+    g.fillStyle(0xb8862b, 1);
+    g.fillCircle(c, c, 3);
+  });
+
+  // --- Compass glass (100 x 100): fixed lubber line and a soft reflection ---
+  make(scene, "compass_glass", 100, 100, (g) => {
+    const c = 50;
+    g.fillStyle(0xc0392b, 1);
+    g.fillTriangle(c - 4, c - card - 3, c + 4, c - card - 3, c, c - card + 6);
+    g.lineStyle(5, 0xffffff, 0.18);
+    g.beginPath();
+    g.arc(c, c, card - 6, Phaser.Math.DegToRad(200), Phaser.Math.DegToRad(260));
+    g.strokePath();
+  });
+
+  // --- Rev counter needle (80 x 12), pivot at the left end (6, 6) ---
+  make(scene, "rev_needle", 80, 12, (g) => {
+    const len = DASH_GAUGES.rev.r - 6;
+    g.fillStyle(0xe74c3c, 1);
+    g.fillTriangle(6, 4.5, 6, 7.5, 6 + len, 6);
+    g.fillStyle(0xb8862b, 1);
+    g.fillCircle(6, 6, 4);
+    g.fillStyle(0xe6c060, 1);
+    g.fillCircle(5.5, 5.5, 1.5);
   });
 
   // --- Granite skerries and wooded islets, see ROCKS ---
