@@ -61,7 +61,9 @@ export class GameScene extends Phaser.Scene {
 
     // Bounds keep the boat inside the play area (it clamps to the edges instead
     // of dying there — the only way to fail is touching an obstacle).
-    this.physics.world.setBounds(0, 0, GAME_WIDTH, PLAY_HEIGHT);
+    // Bottom set 4 px short so the sprite's visual bottom (24 px below centre)
+    // lands exactly on the deck line rather than crossing it.
+    this.physics.world.setBounds(0, 0, GAME_WIDTH, PLAY_HEIGHT - 4);
 
     this.buildBackground();
     this.buildBoat();
@@ -261,7 +263,9 @@ export class GameScene extends Phaser.Scene {
       const b = (o as Phaser.GameObjects.Sprite).body as Body;
       if (b) b.setVelocity(0, 0);
     });
-    this.boat.setCollideWorldBounds(false);
+    // Expand bounds to full screen so the boat sinks behind the deck panel
+    // and stops at the bottom of the screen rather than flying off-screen.
+    this.physics.world.setBounds(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     this.scoreText.setVisible(false);
     this.medalScoreText.setText(String(this.score));
@@ -337,7 +341,11 @@ export class GameScene extends Phaser.Scene {
     if (this.state === "playing") {
       const body = this.boat.body as Body;
       body.setAccelerationY(this.holding ? -THRUST : 0);
-      this.boat.angle = Phaser.Math.Clamp(body.velocity.y * 0.05, -18, 40);
+      // Taper angle to 0 as the boat nears the deck so rotation doesn't drive
+      // the hull visually past the boundary.
+      const deckApproach = PLAY_HEIGHT - this.boat.displayHeight / 2;
+      const taper = Phaser.Math.Clamp((deckApproach - this.boat.y) / this.boat.displayHeight, 0, 1);
+      this.boat.angle = Phaser.Math.Clamp(body.velocity.y * 0.05, -18, 18) * taper;
       this.updateScoreAndCull();
     } else if (this.state === "over") {
       const body = this.boat.body as Body;
