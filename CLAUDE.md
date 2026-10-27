@@ -65,11 +65,11 @@ when changing anything.
   hold-to-rise (no timing precision); forgiving sub-art hitboxes; gentle speeds;
   no flashing; big high-contrast score/messages. The boat clamps to play-area
   edges (`setCollideWorldBounds`) — touching an edge never kills you; only an
-  obstacle does. On death the boat is released from bounds so it sinks behind
-  the deck.
+  obstacle does. On death the bounds expand to the full screen so the boat
+  sinks behind the deck.
 
 ### Restart gotcha
 
 `scene.restart()` re-runs `create()` but **not** field initializers, so any
 per-run state must be reset at the top of `create()` (currently `ripples`,
-`holding`, `canRestart`, `score`). Add new mutable run-state to that reset block.
+`held`, `canRestart`, `score`). Add new mutable run-state to that reset block.

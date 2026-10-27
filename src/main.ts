@@ -8,6 +8,8 @@ new Phaser.Game({
   height: GAME_HEIGHT,
   backgroundColor: "#aee3f5",
   scene: [GameScene],
+  // Track several touches so a palm or extra finger doesn't break holding.
+  input: { activePointers: 4 },
   physics: {
     default: "arcade",
     arcade: {

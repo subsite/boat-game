@@ -29,7 +29,10 @@ export class GameScene extends Phaser.Scene {
   private ripples: Phaser.GameObjects.Image[] = [];
 
   private spawnTimer?: Phaser.Time.TimerEvent;
-  private holding = false;
+  // Control sources currently held down ("p<id>" per pointer, or a key name).
+  // The boat rises while any is held, so a lifted palm or second finger
+  // doesn't drop it while another touch is still down.
+  private held = new Set<string>();
   private canRestart = false;
 
   private score = 0;
@@ -55,7 +58,7 @@ export class GameScene extends Phaser.Scene {
 
     // Reset per-run state (field initializers only run once, not on scene.restart).
     this.ripples = [];
-    this.holding = false;
+    this.held = new Set();
     this.canRestart = false;
     this.score = 0;
 
@@ -141,11 +144,9 @@ export class GameScene extends Phaser.Scene {
       .zone(cx, cy, GAME_WIDTH, PANEL_HEIGHT)
       .setOrigin(0.5)
       .setInteractive();
-    zone.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      this.pressIndicator.setPosition(pointer.x, pointer.y).setVisible(true);
-      this.holding = true;
-      this.press();
-    });
+    zone.on("pointerdown", (pointer: Phaser.Input.Pointer) =>
+      this.pressSource(`p${pointer.id}`, pointer.x, pointer.y)
+    );
   }
 
   private buildHud() {
@@ -195,26 +196,46 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bindInput() {
-    const releasePointer = () => {
-      this.holding = false;
-      this.pressIndicator.setVisible(false);
-    };
+    const releasePointer = (pointer: Phaser.Input.Pointer) => this.releaseSource(`p${pointer.id}`);
     this.input.on("pointerup", releasePointer);
     this.input.on("pointerupoutside", releasePointer);
-    this.input.on("gameout", releasePointer);
+    // Only the mouse can leave the canvas while held (it is pointer 0).
+    this.input.on("gameout", () => this.releaseSource("p0"));
 
     // Switch / keyboard access: many assistive switches emit Space or Enter.
+    // Auto-repeat is ignored so a held switch is one press, never a restart.
+    // Feedback shows at the wheel centre since a key has no touch point.
     const kb = this.input.keyboard;
     if (kb) {
-      const onDown = () => {
-        this.holding = true;
-        this.press();
-      };
-      kb.on("keydown-SPACE", onDown);
-      kb.on("keydown-ENTER", onDown);
-      kb.on("keyup-SPACE", () => (this.holding = false));
-      kb.on("keyup-ENTER", () => (this.holding = false));
+      for (const key of ["SPACE", "ENTER"]) {
+        kb.on(`keydown-${key}`, (e: KeyboardEvent) => {
+          if (!e.repeat) this.pressSource(key, this.wheel.x, this.wheel.y);
+        });
+        kb.on(`keyup-${key}`, () => this.releaseSource(key));
+      }
     }
+
+    // Losing focus swallows keyup/pointerup events; drop everything so the
+    // boat can't get stuck rising.
+    const releaseAll = () => {
+      this.held.clear();
+      this.pressIndicator.setVisible(false);
+    };
+    this.game.events.on(Phaser.Core.Events.BLUR, releaseAll);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () =>
+      this.game.events.off(Phaser.Core.Events.BLUR, releaseAll)
+    );
+  }
+
+  private pressSource(id: string, x: number, y: number) {
+    this.held.add(id);
+    this.pressIndicator.setPosition(x, y).setVisible(true);
+    this.press();
+  }
+
+  private releaseSource(id: string) {
+    this.held.delete(id);
+    if (this.held.size === 0) this.pressIndicator.setVisible(false);
   }
 
   // ---------------------------------------------------------------- states
@@ -340,7 +361,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.state === "playing") {
       const body = this.boat.body as Body;
-      body.setAccelerationY(this.holding ? -THRUST : 0);
+      body.setAccelerationY(this.held.size > 0 ? -THRUST : 0);
       // Taper angle to 0 as the boat nears the deck so rotation doesn't drive
       // the hull visually past the boundary.
       const deckApproach = PLAY_HEIGHT - this.boat.displayHeight / 2;
