@@ -26,8 +26,6 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
       - name: Derive version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
