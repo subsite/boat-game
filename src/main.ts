@@ -14,7 +14,8 @@ new Phaser.Game({
     default: "arcade",
     arcade: {
       gravity: { x: 0, y: 0 },
-      debug: false,
+      // Open the game with ?debug in the URL to draw every hitbox.
+      debug: new URLSearchParams(window.location.search).has("debug"),
     },
   },
   scale: {

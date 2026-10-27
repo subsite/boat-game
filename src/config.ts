@@ -9,8 +9,24 @@ export const PANEL_HEIGHT = 160;
 export const PLAY_HEIGHT = GAME_HEIGHT - PANEL_HEIGHT;
 
 // Gameplay tuning — deliberately gentle and forgiving.
-export const SCROLL_SPEED = 115; // slow horizontal pace
-export const SPAWN_DELAY = 1900; // ms between free-floating obstacles
+// Speeds past the player's boat (px/s). The water and rocks share
+// SCROLL_SPEED so rocks read as anchored; vessels are under way toward the
+// player, so they approach faster.
+export const SCROLL_SPEED = 95;
+export const DAYCRUISER_SPEED = 145;
+export const FREIGHTER_SPEED = 125;
+
+// Obstacles are spaced by when they reach the player's boat, not when they
+// spawn, so the gap stays fair despite the different speeds.
+export const SPAWN_DELAY = 1900; // ms between obstacles reaching the boat
+export const MIN_SPAWN_GAP = 1200; // ms; stops a fast vessel overlapping a slow one at spawn
+
+// The freighter is a rarer obstacle. Wide obstacles (the freighter and the
+// big islands) get a stretched gap before and after them so there is always
+// time to steer around.
+export const FREIGHTER_CHANCE = 0.15;
+export const WIDE_WIDTH = 150; // px; obstacles wider than this count as wide
+export const WIDE_GAP = 1.7; // multiplier on SPAWN_DELAY
 
 // Obstacles float at a random height; keep them away from the very edges so
 // there is room to pass on either side.
