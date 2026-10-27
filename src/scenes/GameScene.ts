@@ -57,6 +57,13 @@ const WAKE_ANGLE = 0.35;
  */
 const depthAt = (y: number) => 1 + y / 1000;
 
+// Draw scale per obstacle type (art, hitbox and wake scale together).
+const SCALES: Record<ObstacleType, number> = {
+  rock: 1,
+  daycruiser: 0.8,
+  freighter: 1,
+};
+
 const SPEEDS: Record<ObstacleType, number> = {
   rock: SCROLL_SPEED,
   daycruiser: DAYCRUISER_SPEED,
@@ -686,7 +693,7 @@ export class GameScene extends Phaser.Scene {
   private scheduleSpawn(type: ObstacleType) {
     const now = this.time.now;
     const key = type === "rock" ? this.pickRock() : type;
-    const width = this.textures.getFrame(key).width;
+    const width = this.textures.getFrame(key).width * SCALES[type];
     const x = GAME_WIDTH + width / 2 + 10; // just off-screen, so nothing pops in
     const travel = ((x - this.boat.x) / SPEEDS[type]) * 1000;
     const wide = width > WIDE_WIDTH;
@@ -718,6 +725,8 @@ export class GameScene extends Phaser.Scene {
     const y = Phaser.Math.Between(SPAWN_MIN_Y, SPAWN_MAX_Y);
 
     const ob = this.hazards.create(x, y, key) as Phaser.Physics.Arcade.Sprite;
+    const scale = SCALES[type];
+    ob.setScale(scale);
     const b = ob.body as Body;
     b.setAllowGravity(false);
     b.setImmovable(true);
@@ -741,9 +750,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Hitbox centre sets the draw order against the player's boat.
-    ob.setDepth(depthAt(ob.y - ob.displayOriginY + b.offset.y + b.height / 2));
-    if (type === "daycruiser") this.addVesselWake(ob, type, 38, 10, 1);
-    else if (type === "freighter") this.addVesselWake(ob, type, 86, 18, 1.4);
+    // (Body sizes/offsets are in source px and scale with the sprite.)
+    ob.setDepth(depthAt(ob.y + scale * (b.offset.y + b.sourceHeight / 2 - ob.displayOriginY)));
+    // Stern offsets are in source px too.
+    if (type === "daycruiser") this.addVesselWake(ob, type, 38 * scale, 10 * scale, scale);
+    else if (type === "freighter") this.addVesselWake(ob, type, 86 * scale, 18 * scale, 1.4 * scale);
 
     ob.setData("scored", false);
     ob.setData("type", type);
@@ -801,7 +812,7 @@ export class GameScene extends Phaser.Scene {
   private updateScoreAndCull() {
     this.hazards.getChildren().forEach((o) => {
       const ob = o as Phaser.Physics.Arcade.Sprite;
-      if (!ob.getData("scored") && ob.x + ob.width / 2 < this.boat.x) {
+      if (!ob.getData("scored") && ob.x + ob.displayWidth / 2 < this.boat.x) {
         ob.setData("scored", true);
         // Vessels passing a docked boat don't count.
         if (this.state === "playing") {
@@ -811,7 +822,7 @@ export class GameScene extends Phaser.Scene {
           this.scoreText.setText(String(this.score));
         }
       }
-      if (ob.x + ob.width / 2 < 0) ob.destroy();
+      if (ob.x + ob.displayWidth / 2 < 0) ob.destroy();
     });
   }
 }
