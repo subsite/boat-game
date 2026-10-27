@@ -53,6 +53,7 @@ export interface RockSpec {
   rockH: number; // hump height above the waterline
   treeH: number; // room above the hump for trees (0 = bare)
   trees: Tree[];
+  marker?: "south" | "west"; // cardinal buoy post on top, so small rocks stand out
   weight: number; // relative spawn frequency
 }
 
@@ -65,8 +66,8 @@ export function rockLayout(s: RockSpec) {
 // Finnish archipelago in side view, from bare skerries to wooded islands.
 // Each entry is one randomly shaped texture; bigger ones spawn less often.
 export const ROCKS: RockSpec[] = [
-  { key: "rock_small_0", rockW: 46, rockH: 18, treeH: 0, trees: [], weight: 2 },
-  { key: "rock_small_1", rockW: 46, rockH: 15, treeH: 0, trees: [], weight: 2 },
+  { key: "rock_small_0", rockW: 46, rockH: 18, treeH: 44, trees: [], marker: "west", weight: 2 },
+  { key: "rock_small_1", rockW: 46, rockH: 15, treeH: 44, trees: [], marker: "south", weight: 2 },
   { key: "rock_0", rockW: 78, rockH: 30, treeH: 0, trees: [], weight: 2 },
   { key: "rock_1", rockW: 84, rockH: 25, treeH: 0, trees: [], weight: 2 },
   { key: "islet_spruce", rockW: 96, rockH: 32, treeH: 58, trees: ["spruce"], weight: 2 },
@@ -120,6 +121,51 @@ function drawPine(g: Phaser.GameObjects.Graphics, x: number, base: number, H: nu
   for (const c of clumps) g.fillEllipse(c.cx, c.cy, c.rw * 2, c.rh * 2);
   g.fillStyle(0x4c7a3a, 1);
   for (const c of clumps) g.fillEllipse(c.cx - c.rw * 0.25, c.cy - c.rh * 0.35, c.rw * 1.1, c.rh * 0.8);
+}
+
+// Cardinal mark (IALA) from the side: a banded post with two black cones on
+// top. Both kinds used here are yellow at the top, to stand out on the dark
+// sea. South: yellow over black, both cones pointing down. West: yellow,
+// black, yellow, cones point to point.
+function drawCardinal(g: Phaser.GameObjects.Graphics, x: number, base: number, H: number, kind: "south" | "west") {
+  const YELLOW = 0xf1c40f;
+  const BLACK = 0x1c1c1c;
+  const postTop = base - H * 0.68;
+  const w = 6;
+  const len = base - postTop;
+  const bands: [number, number][] =
+    kind === "south"
+      ? [
+          [YELLOW, 0.5],
+          [BLACK, 0.5],
+        ]
+      : [
+          [YELLOW, 1 / 3],
+          [BLACK, 1 / 3],
+          [YELLOW, 1 / 3],
+        ];
+  let y = postTop;
+  for (const [color, part] of bands) {
+    g.fillStyle(color, 1);
+    g.fillRect(x - w / 2, y, w, len * part);
+    y += len * part;
+  }
+  // lit left edge, shadowed right edge
+  g.fillStyle(0xffffff, 0.3);
+  g.fillRect(x - w / 2, postTop, 1.5, len);
+  g.fillStyle(0x000000, 0.3);
+  g.fillRect(x + w / 2 - 1.5, postTop, 1.5, len);
+  // topmark mast and cones
+  g.lineStyle(1.5, BLACK, 1);
+  g.lineBetween(x, postTop, x, base - H);
+  const cone = (cy: number, up: boolean) => {
+    const hh = 4;
+    if (up) g.fillTriangle(x - 5, cy + hh, x + 5, cy + hh, x, cy - hh);
+    else g.fillTriangle(x - 5, cy - hh, x + 5, cy - hh, x, cy + hh);
+  };
+  g.fillStyle(BLACK, 1);
+  cone(base - H + 5, false);
+  cone(base - H + 14, kind === "west");
 }
 
 // Side-view archipelago rock: a glacier-smoothed granite hump with a dark wet
@@ -219,6 +265,11 @@ function drawSkerry(g: Phaser.GameObjects.Graphics, spec: RockSpec) {
       if (tree === "spruce") drawSpruce(g, xAt(t), base, H);
       else drawPine(g, xAt(t), base, H);
     });
+  }
+
+  if (spec.marker) {
+    const t = Phaser.Math.FloatBetween(0.4, 0.6);
+    drawCardinal(g, xAt(t), wl - top(t) + 2, spec.treeH * 0.95, spec.marker);
   }
 
   // broken foam where the swell meets the rock
@@ -610,6 +661,39 @@ export function createTextures(scene: Phaser.Scene) {
     g.lineBetween(146, 12, 146, 3);
     g.lineBetween(142, 5, 150, 5);
   });
+
+  // --- Music toggle icons (56 x 56): beamed notes on a dark disc; the
+  // muted one is dimmed with a slash across it ---
+  for (const muted of [false, true]) {
+    make(scene, muted ? "music_off" : "music_on", 56, 56, (g) => {
+      g.fillStyle(0x000000, 0.45);
+      g.fillCircle(28, 28, 27);
+      g.lineStyle(2, 0xffffff, 0.5);
+      g.strokeCircle(28, 28, 26);
+      const ink = muted ? 0x9aa5ab : 0xffffff;
+      // two note heads, stems and a thick beam
+      g.fillStyle(ink, 1);
+      g.fillEllipse(20, 37, 11, 8);
+      g.fillEllipse(36, 34, 11, 8);
+      g.fillRect(24, 15, 3, 22);
+      g.fillRect(40, 12, 3, 22);
+      g.fillPoints(
+        [
+          { x: 24, y: 15 },
+          { x: 43, y: 12 },
+          { x: 43, y: 18 },
+          { x: 24, y: 21 },
+        ],
+        true
+      );
+      if (muted) {
+        g.lineStyle(7, 0x000000, 0.6);
+        g.lineBetween(13, 13, 43, 43);
+        g.lineStyle(4, 0xffffff, 1);
+        g.lineBetween(13, 13, 43, 43);
+      }
+    });
+  }
 
   // --- Down arrow for start / replay prompt (60 x 56) ---
   make(scene, "arrow_down", 60, 56, (g) => {

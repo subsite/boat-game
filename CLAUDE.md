@@ -46,7 +46,7 @@ when changing anything.
   the tileable `sea` / `sea_sheen` and the `wave_N` froth patches). Keys: `wheel`, one
   per `ROCKS` entry (side-view granite skerries and spruce/pine islands of
   several sizes, weighted; `rockLayout` gives canvas size and waterline),
-  `daycruiser`, `freighter`, `dash` (teak dashboard; instrument positions in `DASH_GAUGES`), `compass_card`, `compass_glass`, `rev_needle`, `droplet` (splash), `arrow_down`, `wave_0..N` (`FROTH_VARIANTS`),
+  `daycruiser`, `freighter`, `dash` (teak dashboard; instrument positions in `DASH_GAUGES`), `compass_card`, `compass_glass`, `rev_needle`, `droplet` (splash), `arrow_down`, `music_on`/`music_off`, `wave_0..N` (`FROTH_VARIANTS`),
   `sea`, `sea_sheen`,
   `foam_ring`. Add new art
   here, not as an image import. The one exception is the player boat,
@@ -56,8 +56,15 @@ when changing anything.
   they tile seamlessly. Being Phaser-free, they can be rendered to a PNG with
   `node --experimental-strip-types` to tune the look without a browser.
 - `src/sfx.ts` — sound effects synthesised with WebAudio at play time
-  (`playBloink` on scoring, `playSink` on crash); no audio files, same idea as
+  (`playBloink` on scoring, `playSink` on crash, `playHorn` on start and undock); no audio files, same idea as
   the textures. Played via the scene's `audio()` helper, which respects mute.
+- `src/music.ts` — background music: `public/music/song-N.mp3` played in
+  order and looped via a plain `HTMLAudioElement` (streams; Phaser's WebAudio
+  would decode whole songs into memory). Started from `press()` (needs a user
+  gesture), module-level so it survives scene restarts, paused while the page
+  is hidden. A top-right toggle (or M) mutes just the music; the choice is
+  kept in localStorage. These MP3s are the one other binary-asset exception besides
+  `falko.png`.
 - `src/scenes/GameScene.ts` — the whole game.
 
 Append `?debug` to the URL (e.g. `http://localhost:5173/?debug`) to turn on

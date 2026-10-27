@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { createTextures, ROCKS, rockLayout, FROTH_VARIANTS, DASH_GAUGES } from "../textures";
-import { playBloink, playSink } from "../sfx";
+import { playBloink, playHorn, playSink } from "../sfx";
+import { isMusicMuted, setMusicMuted, startMusic } from "../music";
 import {
   GAME_WIDTH,
   PANEL_HEIGHT,
@@ -327,6 +328,9 @@ export class GameScene extends Phaser.Scene {
   /** WebAudio context for synthesised sounds, or undefined if muted/unavailable. */
   private audio() {
     if (this.sound.mute || !(this.sound instanceof Phaser.Sound.WebAudioSoundManager)) return undefined;
+    // Called from a press on first use, so resuming here unlocks audio right
+    // away instead of waiting for Phaser's own unlock.
+    if (this.sound.context.state === "suspended") void this.sound.context.resume();
     return this.sound.context;
   }
 
@@ -402,6 +406,21 @@ export class GameScene extends Phaser.Scene {
       .setDepth(22)
       .setVisible(false);
 
+    // Music on/off toggle, top right. Large touch target, away from the
+    // wheel so it can't be hit by accident; M toggles it from a keyboard.
+    const musicButton = this.add
+      .image(GAME_WIDTH - 36, 36, isMusicMuted() ? "music_off" : "music_on")
+      .setDepth(20)
+      .setInteractive({ useHandCursor: true });
+    const toggleMusic = () => {
+      setMusicMuted(!isMusicMuted());
+      musicButton.setTexture(isMusicMuted() ? "music_off" : "music_on");
+    };
+    musicButton.on("pointerdown", toggleMusic);
+    this.input.keyboard?.on("keydown-M", (e: KeyboardEvent) => {
+      if (!e.repeat) toggleMusic();
+    });
+
     // Bouncing arrow — points at the wheel during ready and game over.
     this.arrow = this.add
       .image(GAME_WIDTH / 2, PLAY_HEIGHT - 38, "arrow_down")
@@ -471,8 +490,15 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  /** Horn as the boat casts off: at the start and when leaving the dock. */
+  private hornBlast() {
+    const ctx = this.audio();
+    if (ctx) playHorn(ctx);
+  }
+
   private startGame() {
     this.state = "playing";
+    this.hornBlast();
     this.bobTween?.stop();
     this.arrowTween?.stop();
     this.arrow.setVisible(false);
@@ -630,6 +656,7 @@ export class GameScene extends Phaser.Scene {
     this.arrowTween?.stop();
     this.arrow.setVisible(false);
     this.state = "playing";
+    this.hornBlast();
     this.easeWorld(1, 700, "Sine.in");
   }
 
@@ -659,6 +686,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Single entry point for the one control: starts, or restarts when over. */
   private press() {
+    startMusic(); // presses are user gestures, which browsers require for audio
     if (this.state === "ready") this.startGame();
     else if (this.state === "docked") this.undock();
     else if (this.state === "over" && this.canRestart) this.scene.restart();

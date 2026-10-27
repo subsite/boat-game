@@ -90,6 +90,7 @@ src/
   textures.ts        Artwork, generated procedurally (except the player boat)
   sea.ts             Pixel generators for the tileable sea
   sfx.ts             Synthesised WebAudio sound effects
+  music.ts           Background music playlist (public/music/*.mp3)
   scenes/
     GameScene.ts     Boat, obstacles, control, scoring, ready/over flow
 ```

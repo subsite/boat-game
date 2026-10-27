@@ -63,3 +63,37 @@ export function playSink(ctx: AudioContext) {
     osc.stop(start + 0.13);
   }
 }
+
+/**
+ * Friendly two-tone ship's horn for casting off: two detuned pairs of
+ * sawtooth reeds a fifth apart, softened by a low-pass filter, sliding up to
+ * pitch as the air comes in. Kept moderate in volume.
+ */
+export function playHorn(ctx: AudioContext) {
+  const t = ctx.currentTime;
+  const hold = 0.9;
+  const out = ctx.createGain();
+  out.gain.setValueAtTime(0.0001, t);
+  out.gain.exponentialRampToValueAtTime(0.22, t + 0.08);
+  out.gain.setValueAtTime(0.22, t + hold);
+  out.gain.exponentialRampToValueAtTime(0.0001, t + hold + 0.35);
+  out.connect(ctx.destination);
+
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 900;
+  filter.Q.value = 0.7;
+  filter.connect(out);
+
+  for (const f of [116, 117.5, 174, 175.8]) {
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(f * 0.94, t);
+    osc.frequency.exponentialRampToValueAtTime(f, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.value = 0.25;
+    osc.connect(g).connect(filter);
+    osc.start(t);
+    osc.stop(t + hold + 0.4);
+  }
+}
