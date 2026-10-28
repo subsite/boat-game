@@ -92,22 +92,38 @@ const PLAYER_BOATS: PlayerBoat[] = [
   },
 ];
 
-// Best score, kept on the device.
-const BEST_KEY = "boatgame.best";
-let bestScore = loadBest();
+// Best score per player boat, kept on the device. Loaded lazily, on first
+// use, so the one-time migration below can see the chosen boat.
+const BEST_KEY = "boatgame.bestByBoat";
+const OLD_BEST_KEY = "boatgame.best"; // the single record from before per-boat scores
+let bests: Record<string, number> | null = null;
 
-function loadBest() {
+function loadBests(): Record<string, number> {
+  if (bests) return bests;
+  bests = {};
   try {
-    return Math.max(0, Number(localStorage.getItem(BEST_KEY)) || 0);
+    const raw = localStorage.getItem(BEST_KEY);
+    if (raw) bests = JSON.parse(raw) ?? {};
+    else {
+      // the old single record goes to the boat that is selected now
+      const old = Number(localStorage.getItem(OLD_BEST_KEY)) || 0;
+      if (old > 0) bests![PLAYER_BOATS[chosenBoat].key] = old;
+    }
   } catch {
-    return 0;
+    // storage unavailable or unreadable: start from zero
   }
+  return bests!;
 }
 
-function saveBest(score: number) {
-  bestScore = score;
+function bestFor(key: string) {
+  return Math.max(0, Number(loadBests()[key]) || 0);
+}
+
+function saveBest(key: string, score: number) {
+  const all = loadBests();
+  all[key] = score;
   try {
-    localStorage.setItem(BEST_KEY, String(score));
+    localStorage.setItem(BEST_KEY, JSON.stringify(all));
   } catch {
     // storage unavailable: the record lasts until the app closes
   }
@@ -355,7 +371,8 @@ export class GameScene extends Phaser.Scene {
   private buildPicker() {
     const n = PLAYER_BOATS.length;
     const cardW = 132;
-    const cardH = 84;
+    const cardH = 104;
+    const thumbH = 62; // boat picture area; the trophy row sits below it
     const gap = 12;
     const x0 = (GAME_WIDTH - (n * cardW + (n - 1) * gap)) / 2;
     const y = 92;
@@ -363,15 +380,31 @@ export class GameScene extends Phaser.Scene {
     this.pickerCards = PLAYER_BOATS.map((spec, i) => {
       const x = x0 + i * (cardW + gap);
       const card = this.add.graphics();
-      const thumb = this.add.image(x + cardW / 2, y + cardH / 2, spec.key);
-      thumb.setScale(Math.min((cardW - 16) / thumb.width, (cardH - 16) / thumb.height));
+      const thumb = this.add.image(x + cardW / 2, y + 8 + thumbH / 2, spec.key);
+      thumb.setScale(Math.min((cardW - 16) / thumb.width, thumbH / thumb.height));
+      // this boat's own record: small trophy and number, centred under it
+      const rowY = y + cardH - 17;
+      const trophy = this.add.image(0, rowY, "trophy").setScale(0.55);
+      const count = this.add
+        .text(0, rowY + 1, String(bestFor(spec.key)), {
+          fontFamily: "Arial, sans-serif",
+          fontSize: "22px",
+          color: "#ffe680",
+          fontStyle: "bold",
+          stroke: "#3d2a05",
+          strokeThickness: 5,
+        })
+        .setOrigin(0, 0.5);
+      const rowW = trophy.displayWidth + 5 + count.width;
+      trophy.setX(x + cardW / 2 - rowW / 2 + trophy.displayWidth / 2);
+      count.setX(x + cardW / 2 - rowW / 2 + trophy.displayWidth + 5);
       const hit = this.add
         .zone(x, y, cardW, cardH)
         .setOrigin(0)
         .setInteractive({ useHandCursor: true });
       hit.on("pointerdown", () => this.chooseBoat(i));
       card.setData("rect", [x, y, cardW, cardH]);
-      this.picker.add([card, thumb, hit]);
+      this.picker.add([card, thumb, trophy, count, hit]);
       return card;
     });
     this.input.keyboard?.on("keydown-LEFT", () => this.chooseBoat((chosenBoat + n - 1) % n));
@@ -757,7 +790,7 @@ export class GameScene extends Phaser.Scene {
     this.medalScoreText.setVisible(false);
     this.showArrow();
     this.picker.setVisible(true);
-    this.setBestVisible(true);
+    this.setBestVisible(false); // each picker card shows its boat's record
     this.bobTween = this.tweens.add({
       targets: this.boat,
       y: PLAY_HEIGHT / 2 - 14,
@@ -796,7 +829,7 @@ export class GameScene extends Phaser.Scene {
     this.picker.setVisible(false);
     this.scoreText.setText("0").setVisible(true).setColor("#ffffff").setStroke("#1c3d5a", 8);
     // The record corner would be in the way while sailing; the score itself
-    // turns gold once the record is beaten.
+    // turns gold once this boat's record is beaten.
     this.setBestVisible(false);
     (this.boat.body as Body).setAllowGravity(true);
     this.lastWide = false;
@@ -929,7 +962,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateBest() {
-    this.bestText.setText(String(bestScore));
+    this.bestText.setText(String(bestFor(this.boatSpec.key)));
     const w = 56 + this.bestText.width + 10;
     this.bestPill.clear();
     this.bestPill.fillStyle(0x000000, 0.45);
@@ -943,10 +976,10 @@ export class GameScene extends Phaser.Scene {
     this.medalScoreText.setText(String(this.score));
     this.medalGraphics.setVisible(true);
     this.medalScoreText.setVisible(true);
-    if (this.score > bestScore) {
-      // New record: slow golden starburst behind the medal, and the trophy
-      // gives a few gentle pulses as its number updates. No flashing.
-      saveBest(this.score);
+    if (this.score > bestFor(this.boatSpec.key)) {
+      // New record for this boat: slow golden starburst behind the medal, and
+      // the trophy gives a few gentle pulses as its number updates. No flashing.
+      saveBest(this.boatSpec.key, this.score);
       this.updateBest();
       this.recordBurst.setVisible(true).setScale(0.2).setAlpha(0);
       this.tweens.add({ targets: this.recordBurst, scale: 1, alpha: 1, duration: 600, ease: "Back.out" });
@@ -1226,7 +1259,8 @@ export class GameScene extends Phaser.Scene {
           const ctx = this.audio();
           if (ctx) playBloink(ctx);
           this.scoreText.setText(String(this.score));
-          if (this.score === bestScore + 1 && bestScore > 0) {
+          const best = bestFor(this.boatSpec.key);
+          if (this.score === best + 1 && best > 0) {
             // Just beat the record: the score turns gold, with one gentle pulse.
             this.scoreText.setColor("#ffd700").setStroke("#6b4c00", 8);
             this.tweens.add({ targets: this.scoreText, scale: 1.25, duration: 300, yoyo: true, ease: "Sine.inOut" });

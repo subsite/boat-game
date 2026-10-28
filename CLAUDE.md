@@ -110,10 +110,12 @@ divide display-px values by `scaleX/scaleY`.
   mirror it for assistive switches. All input funnels through `press()`, which
   starts the game from `ready`, undocks from `docked` and restarts from `over` (gated by `canRestart`
   so a death-tap doesn't instantly restart).
-- **High score**: `bestScore` (module-level + localStorage `boatgame.best`) is
-  shown top-left as a trophy + number on a pill on the ready and game-over
-  screens (hidden while playing; instead the live score turns gold once it
-  passes the record); `showMedal` saves a new
+- **High score**: one record per player boat (`bestFor(key)` / `saveBest`,
+  localStorage `boatgame.bestByBoat` as JSON; the old single
+  `boatgame.best` is migrated to the selected boat). Each picker card shows
+  its boat's trophy + count; the top-left trophy pill shows the current
+  boat's record on the game-over screen only. While playing, the live score
+  turns gold once it passes the boat's record; `showMedal` saves a new
   record and shows a slowly turning golden starburst behind the medal.
 - **Player boats**: `PLAYER_BOATS` lists the choosable boats
   (`vejde_right`, `buster`), each with its display width, hull hitbox and stern
