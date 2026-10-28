@@ -131,3 +131,206 @@ export function sheenPixels() {
     return [0xb8, 0xc6, 0xcc, v * v * 80];
   };
 }
+
+// ---------------------------------------------------------------- styles
+// Alternative looks, chosen with ?sea=<key> in the URL (see SEA_STYLES).
+
+type PixelFn = (x: number, y: number) => RGBA;
+const CLEAR: PixelFn = () => [0, 0, 0, 0];
+
+// Deterministic 0..1 hash of a grid cell and an index, for scattered marks
+// that still tile (cells wrap at the tile edge).
+function cellHash(cx: number, cy: number, i: number) {
+  const v = Math.sin(cx * 127.1 + cy * 311.7 + i * 74.7) * 43758.5453;
+  return v - Math.floor(v);
+}
+
+/**
+ * Scatter marks over a grid of CELL px cells (one mark set per cell, jittered)
+ * and return the strongest coverage 0..1 at a pixel. `mark` gets the pixel
+ * relative to the cell's mark centre and the cell's hash function.
+ */
+function scatter(size: number, cell: number, mark: (dx: number, dy: number, h: (i: number) => number) => number) {
+  const n = size / cell;
+  return (x: number, y: number) => {
+    const gx = Math.floor(x / cell);
+    const gy = Math.floor(y / cell);
+    let best = 0;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const cx = gx + ox;
+        const cy = gy + oy;
+        const wx = ((cx % n) + n) % n;
+        const wy = ((cy % n) + n) % n;
+        const h = (i: number) => cellHash(wx, wy, i);
+        const mx = (cx + 0.2 + 0.6 * h(0)) * cell;
+        const my = (cy + 0.2 + 0.6 * h(1)) * cell;
+        best = Math.max(best, mark(x - mx, y - my, h));
+      }
+    }
+    return best;
+  };
+}
+
+/** Calm: the same Baltic tones, but only long smooth swells — no fine ripple pattern. */
+function calmPixels(): PixelFn {
+  const size = SEA_TILE;
+  const swell = field(size, 7, 10, 1.5, 4.5, -0.7, 0.9);
+  const chop = field(size, 11, 10, 4, 8, -0.7, 1.0);
+  const deep = [12, 36, 54];
+  const light = [38, 86, 112];
+  return (x, y) => {
+    const rel = swell.slope(x, y) * 7 + chop.slope(x, y) * 1.5;
+    const c = mix(deep, light, clamp01(0.35 + rel));
+    return [c[0], c[1], c[2], 255];
+  };
+}
+
+/** Cartoon: flat blue with soft tone patches and white "∼" wave squiggles. */
+function cartoonPixels(): PixelFn {
+  const size = SEA_TILE;
+  const tone = field(size, 5, 6, 1, 3, 0, Math.PI);
+  const dark = [22, 78, 120];
+  const light = [36, 108, 156];
+  const marks = scatter(size, 64, (dx, dy, h) => {
+    if (h(2) < 0.25) return 0; // some cells stay empty
+    const L = 8 + 5 * h(3); // half length
+    if (Math.abs(dx) > L) return 0;
+    const curve = -2.6 * Math.sin((dx / L) * Math.PI); // one full ∼ wave
+    const taper = 1 - Math.pow(Math.abs(dx) / L, 4); // round, thinner ends
+    return clamp01((1.9 - Math.abs(dy - curve)) * taper);
+  });
+  return (x, y) => {
+    let c = mix(dark, light, smooth(-0.5, 0.5, tone.at(x, y)));
+    c = mix(c, [235, 245, 250], marks(x, y) * 0.85);
+    return [c[0], c[1], c[2], 255];
+  };
+}
+
+/**
+ * Toon: cel-shaded rows of waves in four flat blues with light lines along
+ * the crests. The swell runs mostly across the screen so bands form wave
+ * rows rather than blobs.
+ */
+function toonPixels(): PixelFn {
+  const size = SEA_TILE;
+  const swell = field(size, 7, 10, 3, 6, -Math.PI / 2, 0.3);
+  const chop = field(size, 11, 10, 6, 10, -Math.PI / 2, 0.5);
+  const colors = [
+    [18, 62, 96],
+    [24, 80, 120],
+    [32, 98, 142],
+    [46, 122, 168],
+  ];
+  const h = (x: number, y: number) => swell.sample(x, y) + chop.sample(x, y) * 0.25;
+  const level = (v: number) => (v < -0.4 ? 0 : v < 0.05 ? 1 : v < 0.5 ? 2 : 3);
+  return (x, y) => {
+    const l = level(h(x, y));
+    let c = colors[l];
+    // a light line where this band meets a higher one just above
+    if (level(h(x, y - 2)) > l) c = mix(c, [190, 225, 240], 0.7);
+    return [c[0], c[1], c[2], 255];
+  };
+}
+
+interface BrushOptions {
+  dark: number[]; // base water tones, mixed by a slow tone field
+  light: number[];
+  stroke: number[]; // stroke colour and strength
+  strokeAlpha: number;
+  cell: number; // scatter grid (must divide SEA_TILE)
+  empty: number; // share of cells without a stroke
+  length: [number, number]; // half length range
+  thickness: number;
+  tilt?: number; // radians, strokes slanted along the swell
+  bend?: number; // curvature: strokes bow up like little wave crests
+  group?: number; // strokes stacked per mark (2-3 reads as a wave set)
+  stagger?: number; // sideways shift of each stacked stroke, as a share of its length
+  wave?: number; // px amplitude of a gentle ripple along each stroke (~18 px wavelength)
+  crests?: boolean; // strokes only where swells crest
+  ink?: number[]; // optional second set of dark "ink" strokes
+}
+
+/** Storybook family: tinted water with short brush strokes, painted-book style. */
+function brushPixels(o: BrushOptions): PixelFn {
+  const size = SEA_TILE;
+  const tone = field(size, 5, 6, 1, 3, 0, Math.PI);
+  // crests run across the screen, so stroke rows read as horizontal
+  const swell = o.crests ? field(size, 7, 10, 2, 4, -Math.PI / 2, 0.15) : null;
+  const tilt = o.tilt ?? 0;
+  const ct = Math.cos(tilt);
+  const st = Math.sin(tilt);
+  const mark = (seed: number) =>
+    scatter(size, o.cell, (dx0, dy0, h) => {
+      if (h(2 + seed) < o.empty) return 0;
+      const dx = dx0 * ct + dy0 * st;
+      const dy = -dx0 * st + dy0 * ct;
+      const half = o.length[0] + (o.length[1] - o.length[0]) * h(3 + seed);
+      const t = o.thickness * (0.8 + 0.4 * h(4 + seed));
+      let best = 0;
+      for (let g = 0; g < (o.group ?? 1); g++) {
+        const gl = half * (1 - g * 0.3); // each lower stroke a bit shorter
+        // bend > 0 lowers the stroke's ends, bowing it up like a crest
+        const gx = dx - g * gl * (o.stagger ?? 0);
+        const ripple = (o.wave ?? 0) * Math.sin(gx * 0.35 + h(6 + seed) * 6);
+        const gy = dy - g * (t * 2.6 + 1.5) - ((o.bend ?? 0) * (gx * gx)) / (gl * gl) - ripple;
+        const along = Math.max(0, Math.abs(gx) - gl);
+        best = Math.max(best, clamp01(1.5 - Math.hypot(along, gy) / t));
+      }
+      return best * (0.5 + 0.5 * h(5 + seed));
+    });
+  const strokes = mark(0);
+  const ink = o.ink ? mark(10) : null;
+  return (x, y) => {
+    let c = mix(o.dark, o.light, smooth(-0.5, 0.5, tone.at(x, y)));
+    let a = strokes(x, y) * o.strokeAlpha;
+    if (swell) a *= smooth(-0.05, 0.45, swell.at(x, y));
+    if (ink && o.ink) c = mix(c, o.ink, ink(x, y) * 0.55);
+    c = mix(c, o.stroke, a);
+    return [c[0], c[1], c[2], 255];
+  };
+}
+
+const TEAL_DARK = [12, 46, 62];
+const TEAL_LIGHT = [20, 66, 84];
+const STROKE = [140, 196, 210];
+
+const BRUSH: Record<string, BrushOptions> = {
+  // the original: deep teal, short light horizontal dashes
+  storybook: { dark: TEAL_DARK, light: TEAL_LIGHT, stroke: STROKE, strokeAlpha: 0.7, cell: 32, empty: 0.3, length: [5, 14], thickness: 1.3 },
+  // brighter daytime blue with whiter strokes
+  day: { dark: [20, 78, 116], light: [32, 102, 144], stroke: [190, 228, 240], strokeAlpha: 0.75, cell: 32, empty: 0.3, length: [5, 14], thickness: 1.3 },
+  // longer, gently wavy horizontal strokes gathered on the swell crests
+  swell: { dark: TEAL_DARK, light: TEAL_LIGHT, stroke: STROKE, strokeAlpha: 0.85, cell: 32, empty: 0.15, length: [8, 20], thickness: 1.4, crests: true, wave: 0.6 },
+  // light strokes plus darker "ink" strokes, like a pen-and-wash drawing
+  ink: { dark: [16, 56, 74], light: [26, 78, 98], stroke: STROKE, strokeAlpha: 0.7, cell: 32, empty: 0.35, length: [5, 14], thickness: 1.3, ink: [6, 26, 36] },
+  // little sets of 2-3 stacked strokes, each shifted along, like a wave set
+  sets: { dark: TEAL_DARK, light: TEAL_LIGHT, stroke: STROKE, strokeAlpha: 0.75, cell: 64, empty: 0.2, length: [9, 16], thickness: 1.3, group: 3, stagger: 0.45 },
+  // fewer, longer, softer strokes
+  soft: { dark: [14, 50, 68], light: [22, 72, 92], stroke: [150, 200, 214], strokeAlpha: 0.45, cell: 64, empty: 0.2, length: [14, 30], thickness: 2 },
+};
+
+// Painted-book strokes on horizontal swell rows.
+export const DEFAULT_SEA = "storybook_swell";
+
+export interface SeaStyle {
+  sea: () => PixelFn;
+  sheen: (() => PixelFn) | null; // drifting sparkle overlay, or none
+  froth: boolean; // drifting froth patches on top
+}
+
+export const SEA_STYLES: Record<string, SeaStyle> = {
+  baltic: { sea: seaPixels, sheen: sheenPixels, froth: true }, // the first, realistic one
+  calm: { sea: calmPixels, sheen: sheenPixels, froth: true },
+  cartoon: { sea: cartoonPixels, sheen: null, froth: false },
+  toon: { sea: toonPixels, sheen: null, froth: true },
+  storybook: { sea: () => brushPixels(BRUSH.storybook), sheen: null, froth: false },
+  // storybook variations
+  storybook_day: { sea: () => brushPixels(BRUSH.day), sheen: null, froth: false },
+  storybook_swell: { sea: () => brushPixels(BRUSH.swell), sheen: null, froth: false },
+  storybook_ink: { sea: () => brushPixels(BRUSH.ink), sheen: null, froth: false },
+  storybook_sets: { sea: () => brushPixels(BRUSH.sets), sheen: null, froth: false },
+  storybook_soft: { sea: () => brushPixels(BRUSH.soft), sheen: null, froth: false },
+};
+
+export { CLEAR as clearPixels };
