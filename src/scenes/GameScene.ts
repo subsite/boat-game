@@ -57,6 +57,9 @@ interface PlayerBoat {
   // Bow spray is thrown from the hull between the waterline and this line
   // (two points; the boundary of the dark bottom), from the bow contact aft.
   chine: [[x: number, y: number], [x: number, y: number]];
+  // Stretch along the hull the spray comes from, as shares of the way from
+  // the bow contact point (0) to the stern (1); below 0 reaches forward.
+  spray: [from: number, to: number];
 }
 const PLAYER_BOATS: PlayerBoat[] = [
   {
@@ -69,6 +72,7 @@ const PLAYER_BOATS: PlayerBoat[] = [
       [61, 234],
       [505, 187],
     ],
+    spray: [0.2, 0.9],
   },
   // Buster XL is 6 m to the Vejde's 9 m; both images are hull plus a little
   // extra (pulpit/platform, outboard), so width scales with real length.
@@ -82,6 +86,9 @@ const PLAYER_BOATS: PlayerBoat[] = [
       [115, 289],
       [700, 195],
     ],
+    // the Buster's contact point is far aft, so its spray reaches forward
+    // too, and back past the transom to the outboard (above 1)
+    spray: [-0.2, 1.3],
   },
 ];
 
@@ -314,65 +321,26 @@ export class GameScene extends Phaser.Scene {
   /** Dress the player sprite as the chosen boat: art, size, hitbox, bounds. */
   private applyBoat() {
     const spec = this.boatSpec;
-    // Draw from a copy pre-shrunk to the on-screen size (smooth edges); the
-    // spec's points are in original-image px, so convert them by `r`.
-    const width = spec.width * OBJECT_SCALE;
-    this.boat.setTexture(this.smoothTexture(spec.key, width));
-    const r = this.boatTexRatio();
-    this.boat.setScale(width / this.boat.frame.width);
+    this.boat.setTexture(spec.key);
+    this.boat.setScale((spec.width * OBJECT_SCALE) / this.boat.frame.width);
     // Hitbox covers the main hull only, for forgiving collisions. Arcade takes
-    // these in texture px and scales them with the sprite.
+    // these in source-image px and scales them with the sprite.
     const [hx, hy, hw, hh] = spec.hit;
     const body = this.boat.body as Body;
-    body.setSize(hw * r, hh * r, false);
-    body.setOffset(hx * r, hy * r);
+    body.setSize(hw, hh, false);
+    body.setOffset(hx, hy);
     // Bounds keep the boat inside the play area (it clamps to the edges instead
     // of dying there — the only way to fail is touching an obstacle). The
     // bottom is raised by the art below the hitbox, so the hull's visual
     // bottom lands on the deck line rather than crossing it.
-    const below = (this.boat.frame.height - (hy + hh) * r) * this.boat.scaleY;
+    const below = (this.boat.frame.height - hy - hh) * this.boat.scaleY;
     this.physics.world.setBounds(0, 0, GAME_WIDTH, PLAY_HEIGHT - below);
-  }
-
-  /** Player texture px per original-image px (the texture is a shrunk copy). */
-  private boatTexRatio() {
-    return this.boat.frame.width / this.textures.getFrame(this.boatSpec.key).width;
-  }
-
-  /**
-   * A copy of an image shrunk to `width` px with high-quality smoothing, in
-   * halving steps. Shrinking a big image a lot on the GPU each frame samples
-   * only a few of its pixels and leaves jagged edges; drawing a copy at its
-   * on-screen size gives smooth, anti-aliased ones. Cached in the texture
-   * manager, so it is made once per size.
-   */
-  private smoothTexture(key: string, width: number) {
-    const target = Math.max(1, Math.round(width));
-    const out = `${key}@${target}`;
-    if (this.textures.exists(out)) return out;
-    const src = this.textures.get(key).getSourceImage() as HTMLImageElement;
-    const step = (from: CanvasImageSource, w: number, h: number) => {
-      const c = document.createElement("canvas");
-      c.width = w;
-      c.height = h;
-      const ctx = c.getContext("2d")!;
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(from, 0, 0, w, h);
-      return c;
-    };
-    let canvas = step(src, src.width, src.height);
-    while (canvas.width / 2 > target) canvas = step(canvas, Math.ceil(canvas.width / 2), Math.ceil(canvas.height / 2));
-    canvas = step(canvas, target, Math.max(1, Math.round((src.height * target) / src.width)));
-    this.textures.addCanvas(out, canvas);
-    return out;
   }
 
   /** A point on the player's boat in source-image px, as world coordinates (follows its tilt). */
   private boatPoint(px: number, py: number) {
-    const r = this.boatTexRatio();
-    const ox = (px * r - this.boat.frame.width / 2) * this.boat.scaleX;
-    const oy = (py * r - this.boat.frame.height / 2) * this.boat.scaleY;
+    const ox = (px - this.boat.frame.width / 2) * this.boat.scaleX;
+    const oy = (py - this.boat.frame.height / 2) * this.boat.scaleY;
     const c = Math.cos(this.boat.rotation);
     const s = Math.sin(this.boat.rotation);
     return { x: this.boat.x + c * ox - s * oy, y: this.boat.y + s * ox + c * oy };
@@ -395,9 +363,8 @@ export class GameScene extends Phaser.Scene {
     this.pickerCards = PLAYER_BOATS.map((spec, i) => {
       const x = x0 + i * (cardW + gap);
       const card = this.add.graphics();
-      const src = this.textures.getFrame(spec.key);
-      const fit = Math.min((cardW - 16) / src.width, (cardH - 16) / src.height);
-      const thumb = this.add.image(x + cardW / 2, y + cardH / 2, this.smoothTexture(spec.key, src.width * fit));
+      const thumb = this.add.image(x + cardW / 2, y + cardH / 2, spec.key);
+      thumb.setScale(Math.min((cardW - 16) / thumb.width, (cardH - 16) / thumb.height));
       const hit = this.add
         .zone(x, y, cardW, cardH)
         .setOrigin(0)
@@ -437,9 +404,11 @@ export class GameScene extends Phaser.Scene {
     // drops already in the air fly free of the boat.
     const k = OBJECT_SCALE;
     this.bowSpray = this.add.particles(0, 0, "droplet", {
-      speedX: { min: -190 * k, max: -50 * k }, // backwards
-      speedY: { min: -170 * k, max: -60 * k }, // and up
-      gravityY: 650 * k,
+      // backwards and up; speeds and gravity are 0.7x and 0.7²x of the
+      // first version, so drops trace the same arcs 30% slower
+      speedX: { min: -133 * k, max: -35 * k },
+      speedY: { min: -119 * k, max: -42 * k },
+      gravityY: 320 * k,
       scale: { min: 0.25 * k, max: 0.6 * k },
       alpha: { start: 1, end: 0 },
       lifespan: { min: 220, max: 420 }, // gone quickly, no lingering trail
@@ -467,11 +436,14 @@ export class GameScene extends Phaser.Scene {
     // the hull line the water climbs up to, at a given x
     const chineAt = (x: number) => Math.min(water, c0.y + ((c1.y - c0.y) * (x - c0.x)) / (c1.x - c0.x));
 
+    // a longer stretch gets proportionally more drops, so density stays even
+    const interval = 4.5 * (0.7 / (spec.spray[1] - spec.spray[0]));
     this.sprayClock += delta;
-    while (this.sprayClock > 6) {
-      this.sprayClock -= 6;
+    while (this.sprayClock > interval) {
+      this.sprayClock -= interval;
       if (Math.random() > f) continue;
-      const u = Math.pow(Math.random(), 1.6) * 0.7; // mostly near the contact point
+      // evenly along the boat's spray stretch
+      const u = spec.spray[0] + Math.random() * (spec.spray[1] - spec.spray[0]);
       const x = bow.x + (stern.x - bow.x) * u;
       const y = water - (water - chineAt(x)) * Math.random();
       this.bowSpray.emitParticleAt(x, y, 1);

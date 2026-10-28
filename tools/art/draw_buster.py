@@ -1,5 +1,6 @@
 # Buster XL player boat (bow right) from inbox/buster-xl.png, with a happy
-# granny at the helm and a slight bow-up tilt for speed. The granny is drawn
+# granny at the helm and a slight bow-up tilt for speed. The propeller is cut
+# off at the bottom, as if under water. The granny is drawn
 # *under* the boat image, so the semi-transparent windscreen tints her and
 # only her head sticks out above the frame.
 import sys
@@ -55,6 +56,10 @@ canvas.alpha_composite(granny)
 canvas.alpha_composite(boat, (0, PAD))
 out = canvas.rotate(TILT, resample=Image.BICUBIC, expand=True)  # counter-clockwise: bow up
 out = out.crop(out.getbbox())
+# Hide the outboard's lower leg and propeller "under water": cut just below
+# the hull's bottom at the stern (in the tilted image).
+CUT = 318
+out = out.crop((0, 0, out.width, CUT))
 out.save(OUT, optimize=True)
 print("size", out.size)
 bg = Image.new("RGBA", out.size, (20, 40, 50, 255)); bg.alpha_composite(out)
