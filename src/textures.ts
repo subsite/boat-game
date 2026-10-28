@@ -132,10 +132,9 @@ function drawPine(g: Phaser.GameObjects.Graphics, x: number, base: number, H: nu
   for (const c of clumps) g.fillEllipse(c.cx - c.rw * 0.25, c.cy - c.rh * 0.35, c.rw * 1.1, c.rh * 0.8);
 }
 
-// Cardinal mark (IALA) from the side: a banded post with two black cones on
-// top. Both kinds used here are yellow at the top, to stand out on the dark
-// sea. South: yellow over black, both cones pointing down. West: yellow,
-// black, yellow, cones point to point.
+// Cardinal mark (IALA) from the side: just the banded post, without the
+// topmark cones. Both kinds used here are yellow at the top, to stand out on
+// the dark sea. South: yellow over black. West: yellow, black, yellow.
 function drawCardinal(g: Phaser.GameObjects.Graphics, x: number, base: number, H: number, kind: "south" | "west") {
   const YELLOW = 0xf1c40f;
   const BLACK = 0x1c1c1c;
@@ -153,28 +152,19 @@ function drawCardinal(g: Phaser.GameObjects.Graphics, x: number, base: number, H
           [BLACK, 1 / 3],
           [YELLOW, 1 / 3],
         ];
+  const round = 2; // slightly rounded top
   let y = postTop;
-  for (const [color, part] of bands) {
+  bands.forEach(([color, part], i) => {
     g.fillStyle(color, 1);
-    g.fillRect(x - w / 2, y, w, len * part);
+    if (i === 0) g.fillRoundedRect(x - w / 2, y, w, len * part, { tl: round, tr: round, bl: 0, br: 0 });
+    else g.fillRect(x - w / 2, y, w, len * part);
     y += len * part;
-  }
-  // lit left edge, shadowed right edge
+  });
+  // lit left edge, shadowed right edge (starting below the rounding)
   g.fillStyle(0xffffff, 0.3);
-  g.fillRect(x - w / 2, postTop, 1.5, len);
+  g.fillRect(x - w / 2, postTop + round, 1.5, len - round);
   g.fillStyle(0x000000, 0.3);
-  g.fillRect(x + w / 2 - 1.5, postTop, 1.5, len);
-  // topmark mast and cones
-  g.lineStyle(1.5, BLACK, 1);
-  g.lineBetween(x, postTop, x, base - H);
-  const cone = (cy: number, up: boolean) => {
-    const hh = 4;
-    if (up) g.fillTriangle(x - 5, cy + hh, x + 5, cy + hh, x, cy - hh);
-    else g.fillTriangle(x - 5, cy - hh, x + 5, cy - hh, x, cy + hh);
-  };
-  g.fillStyle(BLACK, 1);
-  cone(base - H + 5, false);
-  cone(base - H + 14, kind === "west");
+  g.fillRect(x + w / 2 - 1.5, postTop + round, 1.5, len - round);
 }
 
 // Side-view archipelago rock: a glacier-smoothed granite hump with a dark wet
