@@ -39,32 +39,49 @@ when changing anything.
   zero; the boat manages its own gravity. One scene: `GameScene`.
 - `src/config.ts` — all layout and gameplay tuning constants. The play area is
   `PLAY_HEIGHT` (everything above the bottom `PANEL_HEIGHT` deck). Tune feel here
-  (`SCROLL_SPEED`, `*_SPEED`, `SPAWN_DELAY`, `MIN_SPAWN_GAP`, `FREIGHTER_*`, `WIDE_*`, `GRAVITY`, `THRUST`, `MAX_FALL`,
+  (`SCROLL_SPEED`, `*_SPEED`, `SPAWN_DELAY`, `MIN_SPAWN_GAP`, `FERRY_*`, `WIDE_*`, `OBJECT_SCALE`, `GRAVITY`, `THRUST`, `MAX_FALL`,
   `SPAWN_MIN_Y/MAX_Y`) rather than scattering magic numbers in the scene.
 - `src/textures.ts` — **all artwork is generated procedurally at runtime**,
   via `make(...)` (Graphics shapes) or `makeCanvas(...)` (per-pixel, used for
   the tileable `sea` / `sea_sheen` and the `wave_N` froth patches). Keys: `wheel`, one
   per `ROCKS` entry (side-view granite skerries and spruce/pine islands of
   several sizes, weighted; `rockLayout` gives canvas size and waterline),
-  `daycruiser`, `freighter`, `dash` (teak dashboard; instrument positions in `DASH_GAUGES`), `compass_card`, `compass_glass`, `rev_needle`, `droplet` (splash), `arrow_down`, `music_on`/`music_off`, `wave_0..N` (`FROTH_VARIANTS`),
+  `dash` (teak dashboard; instrument positions in `DASH_GAUGES`), `compass_card`, `compass_glass`, `rev_needle`, `droplet` (splash), `arrow_down`, `music_on`/`music_off`, `trophy`, `wave_0..N` (`FROTH_VARIANTS`),
   `sea`, `sea_sheen`,
   `foam_ring`. Add new art
   here, not as an image import. The one exception is the player boat,
-  `public/falko.png` (loaded as `falko`).
-- `src/sea.ts` — pure (Phaser-free) pixel generators for the dark Baltic sea
-  tiles, built from seeded sums of sines with whole-number frequencies so
+  `public/falko.png` (mirrored with its name painted out into `falko_left.png`
+  by `tools/art/mirror_falko.py`, loaded as the `falko` obstacle) and the ferry Utö,
+  `public/ferry.png` (`ferry`; cleaned and downscaled from `inbox/uto2-left.png`
+  with the mirrored lettering painted out), and `public/suomenlinna.png`
+  (`suomenlinna`) and the player boats `public/vejde_right.png` (drawn tilted
+  bow-up as if planing, with a captain) and `public/buster.png` (with a granny): flat schematics drawn with Pillow by the scripts in `tools/art/`
+  from reference photos in `inbox/` (not committed). Re-render with those
+  scripts rather than editing the PNGs; hitbox/stern offsets for each image
+  are in `spawnObstacle`.
+- **Sizes**: `OBJECT_SCALE` scales the player boat and every obstacle (art,
+  hitbox, wake, splash), never the dashboard/wheel, which keep their size so
+  the sea gets the space. Size-dependent offsets in the scene multiply by it,
+  and spawn spacing in `config.ts` is scaled up alongside it.
+- `src/sea.ts` — pure (Phaser-free) pixel generators for the sea tiles, in
+  several styles (`SEA_STYLES`, default `DEFAULT_SEA` = `storybook_swell`: `baltic`, `calm`, `cartoon`, `toon`,
+  `storybook` plus `storybook_day|swell|ink|sets|soft` variants from the
+  parametric `brushPixels`; pick with `?sea=<key>`, previews in `inbox/sea-previews/`), built from seeded sums of sines with whole-number frequencies so
   they tile seamlessly. Being Phaser-free, they can be rendered to a PNG with
   `node --experimental-strip-types` to tune the look without a browser.
 - `src/sfx.ts` — sound effects synthesised with WebAudio at play time
-  (`playBloink` on scoring, `playSink` on crash, `playHorn` on start and undock); no audio files, same idea as
+  (`playBloink` on scoring, `playSink` on crash, `playBoatHorn` toot on
+  start and undock, `playShipHorn` when a big vessel appears, rate-limited); no audio files, same idea as
   the textures. Played via the scene's `audio()` helper, which respects mute.
 - `src/music.ts` — background music: `public/music/song-N.mp3` played in
   order and looped via a plain `HTMLAudioElement` (streams; Phaser's WebAudio
   would decode whole songs into memory). Started from `press()` (needs a user
   gesture), module-level so it survives scene restarts, paused while the page
-  is hidden. A top-right toggle (or M) mutes just the music; the choice is
-  kept in localStorage. These MP3s are the one other binary-asset exception besides
-  `falko.png`.
+  is hidden. Idle states (ready/docked/over) call `musicIdle()`: after 30 s
+  the music fades out and stops, and `musicActive()` (start/undock, or any
+  press) restarts that song from the top. A top-right toggle (or M) mutes just the music; the choice is
+  kept in localStorage. These MP3s are the other binary-asset exception besides
+  the boat images.
 - `src/scenes/GameScene.ts` — the whole game.
 
 Append `?debug` to the URL (e.g. `http://localhost:5173/?debug`) to turn on
@@ -93,6 +110,22 @@ divide display-px values by `scaleX/scaleY`.
   mirror it for assistive switches. All input funnels through `press()`, which
   starts the game from `ready`, undocks from `docked` and restarts from `over` (gated by `canRestart`
   so a death-tap doesn't instantly restart).
+- **High score**: `bestScore` (module-level + localStorage `boatgame.best`) is
+  shown top-left as a trophy + number on a pill on the ready and game-over
+  screens (hidden while playing; instead the live score turns gold once it
+  passes the record); `showMedal` saves a new
+  record and shows a slowly turning golden starburst behind the medal.
+- **Player boats**: `PLAYER_BOATS` lists the choosable boats
+  (`vejde_right`, `buster`), each with its display width, hull hitbox and stern
+  point in source-image px. `applyBoat` dresses the one sprite as the chosen
+  boat (texture, scale, hitbox, world-bounds bottom from the art below the
+  hitbox); `boatPoint` maps a source px point to world space (wake, splash,
+  and the bow wave/spray drawn by `updateBowWave` from each boat's `bow`
+  contact point). The Vejde's captain and the Buster's granny are part of
+  their images (`tools/art`).
+  The start ("ready") screen shows a card picker (tap or Left/Right); the
+  choice is module-level plus localStorage, so it survives restarts — which
+  return to the ready screen, so the picker also shows after sinking.
 - **Boat physics**: gravity is enabled only while `playing`. `setAccelerationY`
   toggles between `-THRUST` (held) and `0`. `setMaxVelocity` clamps fall speed
   so motion stays readable; angle is derived from velocity for feedback.
@@ -101,16 +134,22 @@ divide display-px values by `scaleX/scaleY`.
   the same speed as the water, so they read as anchored; vessels are faster
   (`SPEEDS` per type). Because speeds differ, `scheduleSpawn` times each
   spawn by when it will *reach the boat* (`SPAWN_DELAY` apart, stretched by
-  `WIDE_GAP` around obstacles wider than `WIDE_WIDTH`), with `MIN_SPAWN_GAP` so a fast
+  `WIDE_GAP` around obstacles wider than `WIDE_WIDTH`, and by `ROCK_GAP`
+  between consecutive rocks/islands), with `MIN_SPAWN_GAP` so a fast
   vessel never overlaps a slow one at the edge. Random Y, immovable, no gravity. Each type
-  (`rock`/`daycruiser`/`freighter`) sets a **hitbox smaller than its art** for
+  (`rock`/`ferry`/`suomenlinna`/`vejde`/`falko`) sets a **hitbox smaller than its art** for
   forgiving collisions. Scoring/culling happens in `updateScoreAndCull`.
 - **Draw order**: boats and obstacles are painter-sorted with
   `depthAt(hitbox centre y)` (between 1 and 2), so the player's boat passes
   *behind* an obstacle whose hitbox centre is lower on screen (e.g. behind
   island trees) and in front otherwise. Wakes sit at 0.5; splash/foam (6),
   deck (10+) and HUD (20+) stay on top.
-- **Wakes**: `wakes` holds one `Wake` per boat (player + each vessel). Points
+- **Wakes**: obstacle vessels trail V-shaped "plotter" wakes from the stern
+  plus one near-side leg from the bow (`addVesselWake` / `addVesselBowWave`).
+  The player's boat has neither; its bow wave (`updateBowWave`) is spray
+  only: many small round drops thrown up and back from the hull between its
+  `bow` contact point and stern (up to its `chine` line), fading fast. The Vejde is a player boat only.
+  `wakes` holds one `Wake` per vessel. Points
   are dropped at the stern every `WAKE_EMIT` ms, drift with the water, and two
   arms spread at `WAKE_ANGLE` × the boat's speed through the water, all drawn
   on one Graphics each frame. A vessel's wake lingers until faded after the

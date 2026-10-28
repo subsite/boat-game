@@ -1,8 +1,8 @@
 # boat-game
 
 A simple, accessibility-minded mobile game: steer a boat to weave around
-archipelago obstacles (granite skerries, wooded islands, daycruisers and
-freighters), passing each one above or below. Built with **Phaser 3** (game) + **Vite/TypeScript** (web) +
+archipelago obstacles (granite skerries, wooded islands, and archipelago
+boats and ferries), passing each one above or below. Built with **Phaser 3** (game) + **Vite/TypeScript** (web) +
 **Capacitor** (native mobile).
 
 Designed for kids with disabilities:
@@ -95,7 +95,8 @@ src/
     GameScene.ts     Boat, obstacles, control, scoring, ready/over flow
 ```
 
-All art is drawn at runtime, so the prototype runs with no binary assets. Tuning
+Nearly all art is drawn at runtime; the only image files are the player boat
+and the other vessels (`public/`, drawn by `tools/art/`), plus the background music. Tuning
 values (speed, gravity, thrust, spawn rate, obstacle height range) live in
 `src/config.ts`.
 

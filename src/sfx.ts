@@ -65,17 +65,17 @@ export function playSink(ctx: AudioContext) {
 }
 
 /**
- * Friendly two-tone ship's horn for casting off: two detuned pairs of
+ * Deep two-tone ship's horn, for the big vessels: two detuned pairs of
  * sawtooth reeds a fifth apart, softened by a low-pass filter, sliding up to
- * pitch as the air comes in. Kept moderate in volume.
+ * pitch as the air comes in.
  */
-export function playHorn(ctx: AudioContext) {
+export function playShipHorn(ctx: AudioContext, volume = 0.22) {
   const t = ctx.currentTime;
   const hold = 0.9;
   const out = ctx.createGain();
   out.gain.setValueAtTime(0.0001, t);
-  out.gain.exponentialRampToValueAtTime(0.22, t + 0.08);
-  out.gain.setValueAtTime(0.22, t + hold);
+  out.gain.exponentialRampToValueAtTime(volume, t + 0.08);
+  out.gain.setValueAtTime(volume, t + hold);
   out.gain.exponentialRampToValueAtTime(0.0001, t + hold + 0.35);
   out.connect(ctx.destination);
 
@@ -95,5 +95,37 @@ export function playHorn(ctx: AudioContext) {
     osc.connect(g).connect(filter);
     osc.start(t);
     osc.stop(t + hold + 0.4);
+  }
+}
+
+/**
+ * Small motorboat's horn for casting off: a cheerful double "toot-toot",
+ * higher and shorter than a ship's horn. Two square-wave notes a major third
+ * apart, softened by a low-pass filter.
+ */
+export function playBoatHorn(ctx: AudioContext) {
+  const filter = ctx.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 1800;
+  filter.connect(ctx.destination);
+  for (const start of [0, 0.32]) {
+    const t = ctx.currentTime + start;
+    const len = 0.22;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.14, t + 0.02);
+    out.gain.setValueAtTime(0.14, t + len);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.08);
+    out.connect(filter);
+    for (const f of [392, 494]) {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.value = 0.5;
+      osc.connect(g).connect(out);
+      osc.start(t);
+      osc.stop(t + len + 0.1);
+    }
   }
 }

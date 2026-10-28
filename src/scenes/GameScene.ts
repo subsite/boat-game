@@ -1,19 +1,27 @@
 import Phaser from "phaser";
-import { createTextures, ROCKS, rockLayout, FROTH_VARIANTS, DASH_GAUGES } from "../textures";
-import { playBloink, playHorn, playSink } from "../sfx";
-import { isMusicMuted, setMusicMuted, startMusic } from "../music";
+import { createTextures, ROCKS, rockLayout, FROTH_VARIANTS, DASH_GAUGES, seaStyle } from "../textures";
+import { playBloink, playBoatHorn, playShipHorn, playSink } from "../sfx";
+import { isMusicMuted, musicActive, musicIdle, setMusicMuted, startMusic } from "../music";
 import {
   GAME_WIDTH,
   PANEL_HEIGHT,
   PLAY_HEIGHT,
   SCROLL_SPEED,
-  DAYCRUISER_SPEED,
-  FREIGHTER_SPEED,
+  FERRY_SPEED,
+  SUOMENLINNA_SPEED,
+  FALKO_SPEED,
   MIN_SPAWN_GAP,
   SPAWN_DELAY,
-  FREIGHTER_CHANCE,
+  FERRY_CHANCE,
+  FERRY_WIDTH,
+  SUOMENLINNA_CHANCE,
+  SUOMENLINNA_WIDTH,
+  FALKO_CHANCE,
+  FALKO_WIDTH,
+  OBJECT_SCALE,
   WIDE_WIDTH,
   WIDE_GAP,
+  ROCK_GAP,
   SPAWN_MIN_Y,
   SPAWN_MAX_Y,
   GRAVITY,
@@ -24,7 +32,7 @@ import {
 type Body = Phaser.Physics.Arcade.Body;
 type GameState = "ready" | "playing" | "docked" | "over";
 
-type ObstacleType = "rock" | "daycruiser" | "freighter";
+type ObstacleType = "rock" | "ferry" | "suomenlinna" | "falko";
 
 // A point on the wake line, left in the water at the stern.
 interface WakePoint {
@@ -36,12 +44,99 @@ interface WakePoint {
   fy: number;
   fr: number;
 }
-// A wake trailing behind one boat (the player's or a vessel's).
+// Boats the player can choose on the start screen. Values are in source-image
+// px: the forgiving hitbox (hull only), the stern at the waterline (where the
+// wake starts) and the bow contact point, where the hull meets the water and
+// the bow wave and spray come from. All face right.
+interface PlayerBoat {
+  key: string;
+  width: number; // display width before OBJECT_SCALE
+  hit: [x: number, y: number, w: number, h: number];
+  stern: [x: number, y: number];
+  bow: [x: number, y: number];
+  // Bow spray is thrown from the hull between the waterline and this line
+  // (two points; the boundary of the dark bottom), from the bow contact aft.
+  chine: [[x: number, y: number], [x: number, y: number]];
+}
+const PLAYER_BOATS: PlayerBoat[] = [
+  {
+    key: "vejde_right",
+    width: 140,
+    hit: [76, 163, 400, 58],
+    stern: [61, 234],
+    bow: [332, 237],
+    chine: [
+      [61, 234],
+      [505, 187],
+    ],
+  },
+  // Buster XL is 6 m to the Vejde's 9 m; both images are hull plus a little
+  // extra (pulpit/platform, outboard), so width scales with real length.
+  {
+    key: "buster",
+    width: 93,
+    hit: [180, 185, 620, 80],
+    stern: [115, 300],
+    bow: [320, 300],
+    chine: [
+      [115, 289],
+      [700, 195],
+    ],
+  },
+];
+
+// Best score, kept on the device.
+const BEST_KEY = "boatgame.best";
+let bestScore = loadBest();
+
+function loadBest() {
+  try {
+    return Math.max(0, Number(localStorage.getItem(BEST_KEY)) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function saveBest(score: number) {
+  bestScore = score;
+  try {
+    localStorage.setItem(BEST_KEY, String(score));
+  } catch {
+    // storage unavailable: the record lasts until the app closes
+  }
+}
+
+// The chosen boat is remembered (here across restarts, in storage across launches).
+const BOAT_KEY = "boatgame.playerBoat";
+let chosenBoat = loadChosenBoat();
+
+function loadChosenBoat() {
+  try {
+    const i = PLAYER_BOATS.findIndex((b) => b.key === localStorage.getItem(BOAT_KEY));
+    return Math.max(0, i);
+  } catch {
+    return 0;
+  }
+}
+
+function saveChosenBoat(i: number) {
+  chosenBoat = i;
+  try {
+    localStorage.setItem(BOAT_KEY, PLAYER_BOATS[i].key);
+  } catch {
+    // storage unavailable: the choice lasts until the app closes
+  }
+}
+
+// A V-shaped wake trailing behind an obstacle vessel (the player's boat has a
+// bow wave instead, see updateBowWave).
 interface Wake {
   owner: Phaser.GameObjects.GameObject; // the wake is dropped once this is gone and faded
   stern: () => { x: number; y: number } | null; // null while not leaving a wake
   spread: number; // px/s sideways speed of each arm
   size: number; // line width / fleck scale
+  arms: number[]; // which arms to draw: -1 far side, 1 near side (lower on screen)
+  wash: boolean; // churned water straight behind (sterns only)
   points: WakePoint[];
   sinceEmit: number; // ms
 }
@@ -50,6 +145,9 @@ const WAKE_EMIT = 30; // ms between wake points
 // Each arm spreads sideways at this fraction of the boat's speed through the
 // water, opening a V of roughly 20 degrees like a real boat's wake.
 const WAKE_ANGLE = 0.35;
+const SHIP_HORN_GAP = 8000; // ms between big-vessel horns
+// Obstacle vessels' bow-wave leg spreads this many times faster than a wake arm.
+const BOW_WAVE_SPREAD = 2.5;
 
 /**
  * Painter's order for boats and obstacles: whatever has its hitbox centre
@@ -58,17 +156,11 @@ const WAKE_ANGLE = 0.35;
  */
 const depthAt = (y: number) => 1 + y / 1000;
 
-// Draw scale per obstacle type (art, hitbox and wake scale together).
-const SCALES: Record<ObstacleType, number> = {
-  rock: 1,
-  daycruiser: 0.8,
-  freighter: 1,
-};
-
 const SPEEDS: Record<ObstacleType, number> = {
   rock: SCROLL_SPEED,
-  daycruiser: DAYCRUISER_SPEED,
-  freighter: FREIGHTER_SPEED,
+  ferry: FERRY_SPEED,
+  suomenlinna: SUOMENLINNA_SPEED,
+  falko: FALKO_SPEED,
 };
 
 export class GameScene extends Phaser.Scene {
@@ -87,6 +179,8 @@ export class GameScene extends Phaser.Scene {
 
   private spawnTimer?: Phaser.Time.TimerEvent;
   private lastWide = false;
+  private lastRock = false;
+  private lastShipHorn = -Infinity;
   private lastSpawn = 0;
   private lastArrival = 0;
   // Control sources currently held down ("p<id>" per pointer, or a key name).
@@ -99,13 +193,21 @@ export class GameScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private medalGraphics!: Phaser.GameObjects.Graphics;
   private medalScoreText!: Phaser.GameObjects.Text;
+  private bestPill!: Phaser.GameObjects.Graphics;
+  private bestTrophy!: Phaser.GameObjects.Image;
+  private bestText!: Phaser.GameObjects.Text;
+  private recordBurst!: Phaser.GameObjects.Graphics;
   private arrow!: Phaser.GameObjects.Image;
   private arrowTween?: Phaser.Tweens.Tween;
 
   private pressIndicator!: Phaser.GameObjects.Arc;
-  private bobTween?: Phaser.Tweens.Tween;
   private wakeGfx!: Phaser.GameObjects.Graphics;
   private wakes: Wake[] = [];
+  private bowSpray!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private sprayClock = 0;
+  private picker!: Phaser.GameObjects.Container;
+  private pickerCards: Phaser.GameObjects.Graphics[] = [];
+  private bobTween?: Phaser.Tweens.Tween;
   // How fast the world (sea, rocks, spawning) moves past the boat, 0..1.
   // Eased down when docking and back up when leaving, so nothing jolts.
   private worldSpeed = 1;
@@ -116,7 +218,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("falko", "falko.png");
+    // Falkö cargo ferry as an obstacle: mirrored to face left, name painted out
+    // (tools/art/mirror_falko.py).
+    this.load.image("falko_left", "falko_left.png");
+    // Player boats the picker offers (see PLAYER_BOATS).
+    this.load.image("vejde_right", "vejde_right.png");
+    this.load.image("buster", "buster.png");
+    // Archipelago ferry Utö (bow left), traced artwork; mirrored lettering removed.
+    this.load.image("ferry", "ferry.png");
+    // Helsinki's double-ended Suomenlinna II passenger ferry, flat schematic.
+    this.load.image("suomenlinna", "suomenlinna.png");
+    // (Schematic boat images are drawn by the scripts in tools/art.)
   }
 
   create() {
@@ -124,24 +236,20 @@ export class GameScene extends Phaser.Scene {
 
     // Reset per-run state (field initializers only run once, not on scene.restart).
     this.ripples = [];
-    this.wakes = [];
     this.worldSpeed = 1;
+    this.wakes = [];
     this.held = new Set();
     this.canRestart = false;
     this.score = 0;
 
-    // Bounds keep the boat inside the play area (it clamps to the edges instead
-    // of dying there — the only way to fail is touching an obstacle).
-    // Bottom set 4 px short so the sprite's visual bottom (24 px below centre)
-    // lands exactly on the deck line rather than crossing it.
-    this.physics.world.setBounds(0, 0, GAME_WIDTH, PLAY_HEIGHT - 4);
-
     this.buildBackground();
     this.buildBoat();
-    this.buildWake();
+    this.wakeGfx = this.add.graphics().setDepth(0.5);
+    this.buildBowWave();
     this.hazards = this.physics.add.group();
     this.buildControl();
     this.buildHud();
+    this.buildPicker();
 
     // Obstacles only hit while playing; "ghost" ones were overlapping the boat
     // when it left the dock and are let through.
@@ -170,9 +278,10 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0)
       .setDepth(-18);
 
-    // Drifting froth patches, angled along the swell crests.
+    // Drifting froth patches, angled along the swell crests (not every sea
+    // style has them).
     this.ripples = [];
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < (seaStyle().froth ? 8 : 0); i++) {
       this.ripples.push(
         this.add
           .image(
@@ -189,50 +298,175 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buildBoat() {
-    this.boat = this.physics.add
-      .sprite(110, PLAY_HEIGHT / 2, "falko")
-      .setDisplaySize(140, 48);
+    this.boat = this.physics.add.sprite(110, PLAY_HEIGHT / 2, PLAYER_BOATS[chosenBoat].key);
     const body = this.boat.body as Body;
     body.setGravityY(GRAVITY);
     body.setAllowGravity(false);
     body.setMaxVelocity(0, MAX_FALL);
-    // Hitbox covers the main hull only (below superstructure), forgiving collisions.
-    // Values are in display px; Arcade measures bodies in source-image px and
-    // scales them with the sprite, so divide by the scale (falko.png is ~1300 px wide).
-    const sx = this.boat.scaleX;
-    const sy = this.boat.scaleY;
-    body.setSize(110 / sx, 18 / sy, false);
-    body.setOffset(15 / sx, 26 / sy);
     this.boat.setCollideWorldBounds(true);
+    this.applyBoat();
   }
 
-  private buildWake() {
-    this.wakeGfx = this.add.graphics().setDepth(0.5);
-    // Only a boat under way leaves a wake (not when docked or sunk).
-    this.wakes.push({
-      owner: this.boat,
-      stern: () => {
-        if (this.state !== "ready" && this.state !== "playing") return null;
-        const c = Math.cos(this.boat.rotation);
-        const s = Math.sin(this.boat.rotation);
-        const ox = -64; // stern, in display px from the boat's centre
-        const oy = 16; // waterline
-        return { x: this.boat.x + c * ox - s * oy, y: this.boat.y + s * ox + c * oy };
-      },
-      spread: WAKE_ANGLE * SCROLL_SPEED,
-      size: 1,
-      points: [],
-      sinceEmit: WAKE_EMIT,
+  private get boatSpec() {
+    return PLAYER_BOATS[chosenBoat];
+  }
+
+  /** Dress the player sprite as the chosen boat: art, size, hitbox, bounds. */
+  private applyBoat() {
+    const spec = this.boatSpec;
+    this.boat.setTexture(spec.key);
+    this.boat.setScale((spec.width * OBJECT_SCALE) / this.boat.frame.width);
+    // Hitbox covers the main hull only, for forgiving collisions. Arcade takes
+    // these in source-image px and scales them with the sprite.
+    const [hx, hy, hw, hh] = spec.hit;
+    const body = this.boat.body as Body;
+    body.setSize(hw, hh, false);
+    body.setOffset(hx, hy);
+    // Bounds keep the boat inside the play area (it clamps to the edges instead
+    // of dying there — the only way to fail is touching an obstacle). The
+    // bottom is raised by the art below the hitbox, so the hull's visual
+    // bottom lands on the deck line rather than crossing it.
+    const below = (this.boat.frame.height - hy - hh) * this.boat.scaleY;
+    this.physics.world.setBounds(0, 0, GAME_WIDTH, PLAY_HEIGHT - below);
+  }
+
+  /** A point on the player's boat in source-image px, as world coordinates (follows its tilt). */
+  private boatPoint(px: number, py: number) {
+    const ox = (px - this.boat.frame.width / 2) * this.boat.scaleX;
+    const oy = (py - this.boat.frame.height / 2) * this.boat.scaleY;
+    const c = Math.cos(this.boat.rotation);
+    const s = Math.sin(this.boat.rotation);
+    return { x: this.boat.x + c * ox - s * oy, y: this.boat.y + s * ox + c * oy };
+  }
+
+  /**
+   * Boat picker on the start screen: one big card per boat in a row across
+   * the top of the sea. Tapping a card (or Left/Right) swaps the boat; the
+   * wheel still starts the game. Shown whenever the game is "ready", which
+   * includes retrying after sinking.
+   */
+  private buildPicker() {
+    const n = PLAYER_BOATS.length;
+    const cardW = 132;
+    const cardH = 84;
+    const gap = 12;
+    const x0 = (GAME_WIDTH - (n * cardW + (n - 1) * gap)) / 2;
+    const y = 92;
+    this.picker = this.add.container(0, 0).setDepth(20);
+    this.pickerCards = PLAYER_BOATS.map((spec, i) => {
+      const x = x0 + i * (cardW + gap);
+      const card = this.add.graphics();
+      const thumb = this.add.image(x + cardW / 2, y + cardH / 2, spec.key);
+      thumb.setScale(Math.min((cardW - 16) / thumb.width, (cardH - 16) / thumb.height));
+      const hit = this.add
+        .zone(x, y, cardW, cardH)
+        .setOrigin(0)
+        .setInteractive({ useHandCursor: true });
+      hit.on("pointerdown", () => this.chooseBoat(i));
+      card.setData("rect", [x, y, cardW, cardH]);
+      this.picker.add([card, thumb, hit]);
+      return card;
     });
+    this.input.keyboard?.on("keydown-LEFT", () => this.chooseBoat((chosenBoat + n - 1) % n));
+    this.input.keyboard?.on("keydown-RIGHT", () => this.chooseBoat((chosenBoat + 1) % n));
+    this.drawPicker();
+  }
+
+  /** Card frames: dark translucent cards, the chosen one with a thick gold border. */
+  private drawPicker() {
+    this.pickerCards.forEach((card, i) => {
+      const [x, y, w, h] = card.getData("rect") as number[];
+      const chosen = i === chosenBoat;
+      card.clear();
+      card.fillStyle(0x000000, chosen ? 0.55 : 0.4);
+      card.fillRoundedRect(x, y, w, h, 12);
+      card.lineStyle(chosen ? 5 : 2, chosen ? 0xf1c40f : 0xffffff, chosen ? 1 : 0.45);
+      card.strokeRoundedRect(x, y, w, h, 12);
+    });
+  }
+
+  private chooseBoat(i: number) {
+    if (this.state !== "ready" || i === chosenBoat) return;
+    saveChosenBoat(i);
+    this.applyBoat();
+    this.drawPicker();
+  }
+
+  private buildBowWave() {
+    // Drops are emitted at world positions (the emitter stays at 0,0), so
+    // drops already in the air fly free of the boat.
+    const k = OBJECT_SCALE;
+    this.bowSpray = this.add.particles(0, 0, "droplet", {
+      speedX: { min: -190 * k, max: -50 * k }, // backwards
+      speedY: { min: -170 * k, max: -60 * k }, // and up
+      gravityY: 650 * k,
+      scale: { min: 0.25 * k, max: 0.6 * k },
+      alpha: { start: 1, end: 0 },
+      lifespan: { min: 220, max: 420 }, // gone quickly, no lingering trail
+      emitting: false,
+    });
+  }
+
+  /**
+   * Bow wave of the player's boat while under way: lots of small round drops
+   * thrown up and back off the hull between the bow contact point (where the
+   * tilted hull meets the water) and the stern, densest at the contact point.
+   * They fly free of the boat and fade within a fraction of a second. Emission
+   * follows the world's speed, so the spray dies away as the boat docks.
+   */
+  private updateBowWave(delta: number) {
+    const f = this.state === "ready" || this.state === "playing" ? this.worldSpeed : 0;
+    this.bowSpray.setDepth(this.boat.depth + 0.002); // just in front of the hull
+    if (f < 0.05) return;
+    const spec = this.boatSpec;
+    const bow = this.boatPoint(...spec.bow);
+    const stern = this.boatPoint(...spec.stern);
+    const c0 = this.boatPoint(...spec.chine[0]);
+    const c1 = this.boatPoint(...spec.chine[1]);
+    const water = bow.y;
+    // the hull line the water climbs up to, at a given x
+    const chineAt = (x: number) => Math.min(water, c0.y + ((c1.y - c0.y) * (x - c0.x)) / (c1.x - c0.x));
+
+    this.sprayClock += delta;
+    while (this.sprayClock > 6) {
+      this.sprayClock -= 6;
+      if (Math.random() > f) continue;
+      const u = Math.pow(Math.random(), 1.6) * 0.7; // mostly near the contact point
+      const x = bow.x + (stern.x - bow.x) * u;
+      const y = water - (water - chineAt(x)) * Math.random();
+      this.bowSpray.emitParticleAt(x, y, 1);
+    }
   }
 
   /** Trail a wake behind a vessel, from its stern (offset from its centre) at the waterline. */
   private addVesselWake(ob: Phaser.GameObjects.Sprite, type: ObstacleType, ox: number, oy: number, size: number) {
+    this.addWake(ob, type, ox, oy, size, [-1, 1], true);
+  }
+
+  /** Bow wave of a vessel: one leg of a V, on the near side, from the bow waterline. */
+  private addVesselBowWave(ob: Phaser.GameObjects.Sprite, type: ObstacleType, ox: number, oy: number, size: number) {
+    // The bow pushes water out harder than the stern wake spreads, so its leg
+    // opens wider.
+    this.addWake(ob, type, ox, oy, size, [1], false, BOW_WAVE_SPREAD);
+  }
+
+  private addWake(
+    ob: Phaser.GameObjects.Sprite,
+    type: ObstacleType,
+    ox: number,
+    oy: number,
+    size: number,
+    arms: number[],
+    wash: boolean,
+    spreadScale = 1
+  ) {
     this.wakes.push({
       owner: ob,
       stern: () => (this.state === "over" || !ob.active ? null : { x: ob.x + ox, y: ob.y + oy }),
-      spread: WAKE_ANGLE * (SPEEDS[type] - SCROLL_SPEED),
+      spread: WAKE_ANGLE * (SPEEDS[type] - SCROLL_SPEED) * spreadScale,
       size,
+      arms,
+      wash,
       points: [],
       sinceEmit: WAKE_EMIT,
     });
@@ -286,12 +520,14 @@ export class GameScene extends Phaser.Scene {
       }
     };
     // churned wash straight behind the stern, gone before the arms are
-    segments(
-      (t) => 5 + t * 12,
-      (t) => 0.14 * (1 - t * 1.6),
-      () => 0
-    );
-    for (const sign of [-1, 1]) {
+    if (w.wash) {
+      segments(
+        (t) => 5 + t * 12,
+        (t) => 0.14 * (1 - t * 1.6),
+        () => 0
+      );
+    }
+    for (const sign of w.arms) {
       segments(
         (t) => 3 + t * 6,
         (t) => 0.1 * fade(t),
@@ -305,6 +541,7 @@ export class GameScene extends Phaser.Scene {
     }
     // froth flecks scattered along the arms
     for (const p of pts) {
+      if (!w.arms.includes(p.side)) continue;
       const t = p.age / WAKE_LIFE;
       g.fillStyle(0xffffff, 0.4 * fade(t));
       g.fillCircle(p.x + p.fx, p.y + p.side * spread(p) * p.fy, p.fr * k);
@@ -406,6 +643,32 @@ export class GameScene extends Phaser.Scene {
       .setDepth(22)
       .setVisible(false);
 
+    // Best score, top left (opposite the music button): a gold trophy and the
+    // number on a dark pill, shown all the time.
+    this.bestPill = this.add.graphics().setDepth(20);
+    this.bestTrophy = this.add.image(32, 36, "trophy").setDepth(20.5);
+    this.bestText = this.add
+      .text(56, 37, "", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "30px",
+        color: "#ffe680",
+        fontStyle: "bold",
+        stroke: "#3d2a05",
+        strokeThickness: 6,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(20.5);
+    this.updateBest();
+
+    // Golden starburst behind the medal for a new record (hidden until then).
+    this.recordBurst = this.add.graphics({ x: mx, y: my }).setDepth(20.8).setVisible(false);
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const b = a + Math.PI / 24;
+      this.recordBurst.fillStyle(0xf1c40f, i % 2 ? 0.35 : 0.55);
+      this.recordBurst.fillTriangle(0, 0, Math.cos(a - Math.PI / 24) * 120, Math.sin(a - Math.PI / 24) * 120, Math.cos(b) * 120, Math.sin(b) * 120);
+    }
+
     // Music on/off toggle, top right. Large touch target, away from the
     // wheel so it can't be hit by accident; M toggles it from a keyboard.
     const musicButton = this.add
@@ -475,11 +738,14 @@ export class GameScene extends Phaser.Scene {
 
   private enterReady() {
     this.state = "ready";
+    musicIdle();
     this.score = 0;
     this.scoreText.setVisible(false);
     this.medalGraphics.setVisible(false);
     this.medalScoreText.setVisible(false);
     this.showArrow();
+    this.picker.setVisible(true);
+    this.setBestVisible(true);
     this.bobTween = this.tweens.add({
       targets: this.boat,
       y: PLAY_HEIGHT / 2 - 14,
@@ -490,21 +756,40 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  /** Horn as the boat casts off: at the start and when leaving the dock. */
+  /** The player's small boat toots as it casts off: at the start and when leaving the dock. */
   private hornBlast() {
     const ctx = this.audio();
-    if (ctx) playHorn(ctx);
+    if (ctx) playBoatHorn(ctx);
+  }
+
+  /**
+   * A big vessel sounds its horn as it comes into view: quieter than the
+   * player's toot and at most every SHIP_HORN_GAP ms, so it stays occasional.
+   */
+  private shipHorn() {
+    if (this.time.now - this.lastShipHorn < SHIP_HORN_GAP) return;
+    const ctx = this.audio();
+    if (!ctx) return;
+    this.lastShipHorn = this.time.now;
+    playShipHorn(ctx, 0.15);
   }
 
   private startGame() {
     this.state = "playing";
+    musicActive();
     this.hornBlast();
     this.bobTween?.stop();
     this.arrowTween?.stop();
     this.arrow.setVisible(false);
-    this.scoreText.setText("0").setVisible(true);
+    this.picker.setVisible(false);
+    this.scoreText.setText("0").setVisible(true).setColor("#ffffff").setStroke("#1c3d5a", 8);
+    // The record corner would be in the way while sailing; the score itself
+    // turns gold once the record is beaten.
+    this.setBestVisible(false);
     (this.boat.body as Body).setAllowGravity(true);
     this.lastWide = false;
+    this.lastRock = false;
+    this.lastShipHorn = -Infinity;
     this.lastSpawn = -Infinity;
     this.lastArrival = -Infinity;
     this.scheduleSpawn(this.pickType());
@@ -513,6 +798,7 @@ export class GameScene extends Phaser.Scene {
   private endGame() {
     if (this.state !== "playing") return;
     this.state = "over";
+    musicIdle();
     this.spawnTimer?.remove();
     this.cameras.main.shake(180, 0.008);
     const ctx = this.audio();
@@ -533,13 +819,14 @@ export class GameScene extends Phaser.Scene {
   private sinkBoat(onDone: () => void) {
     const { x, y } = this.boat;
 
-    const waterline = y + 16;
+    const k = OBJECT_SCALE;
+    const waterline = this.boatPoint(this.boat.frame.width / 2, this.boatSpec.stern[1]).y;
 
     // Water thrown up from the hull: a tall column of droplets that arcs up
     // and falls back under gravity, plus lower, wider side spray.
     const jets = this.add
       .particles(0, 0, "droplet", {
-        x: { min: -50, max: 50 },
+        x: { min: -50 * k, max: 50 * k },
         angle: { min: 245, max: 295 },
         speed: { min: 220, max: 460 },
         gravityY: 750,
@@ -551,7 +838,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(6);
     const spray = this.add
       .particles(0, 0, "droplet", {
-        x: { min: -60, max: 60 },
+        x: { min: -60 * k, max: 60 * k },
         angle: { min: 200, max: 340 },
         speed: { min: 110, max: 260 },
         gravityY: 750,
@@ -572,8 +859,8 @@ export class GameScene extends Phaser.Scene {
     // White water churning flat along the waterline as the hull goes under.
     const churn = this.add
       .particles(0, 0, "wave_0", {
-        x: { min: -55, max: 55 },
-        y: { min: 10, max: 20 },
+        x: { min: -55 * k, max: 55 * k },
+        y: { min: 10 * k, max: 20 * k },
         speedX: { min: -40, max: 40 },
         speedY: { min: -6, max: 6 },
         scaleX: { start: 0.8, end: 1.8 },
@@ -608,7 +895,7 @@ export class GameScene extends Phaser.Scene {
         { angle: 30, duration: 450, ease: "Quad.out" },
         {
           angle: 50,
-          y: y + 18,
+          y: y + 18 * k,
           alpha: 0,
           scaleX: this.boat.scaleX * 0.85,
           scaleY: this.boat.scaleY * 0.85,
@@ -623,11 +910,45 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private setBestVisible(visible: boolean) {
+    this.bestPill.setVisible(visible);
+    this.bestTrophy.setVisible(visible);
+    this.bestText.setVisible(visible);
+  }
+
+  private updateBest() {
+    this.bestText.setText(String(bestScore));
+    const w = 56 + this.bestText.width + 10;
+    this.bestPill.clear();
+    this.bestPill.fillStyle(0x000000, 0.45);
+    this.bestPill.fillRoundedRect(8, 10, w, 52, 26);
+    this.bestPill.lineStyle(2, 0xffffff, 0.5);
+    this.bestPill.strokeRoundedRect(8, 10, w, 52, 26);
+  }
+
   private showMedal() {
     this.scoreText.setVisible(false);
     this.medalScoreText.setText(String(this.score));
     this.medalGraphics.setVisible(true);
     this.medalScoreText.setVisible(true);
+    if (this.score > bestScore) {
+      // New record: slow golden starburst behind the medal, and the trophy
+      // gives a few gentle pulses as its number updates. No flashing.
+      saveBest(this.score);
+      this.updateBest();
+      this.recordBurst.setVisible(true).setScale(0.2).setAlpha(0);
+      this.tweens.add({ targets: this.recordBurst, scale: 1, alpha: 1, duration: 600, ease: "Back.out" });
+      this.tweens.add({ targets: this.recordBurst, angle: 360, duration: 20000, repeat: -1 });
+      this.tweens.add({
+        targets: [this.bestTrophy, this.bestText],
+        scale: 1.25,
+        duration: 350,
+        yoyo: true,
+        repeat: 2,
+        ease: "Sine.inOut",
+      });
+    }
+    this.setBestVisible(true);
     this.showArrow();
     this.canRestart = true;
   }
@@ -640,6 +961,7 @@ export class GameScene extends Phaser.Scene {
    */
   private dock() {
     this.state = "docked";
+    musicIdle();
     const body = this.boat.body as Body;
     body.setVelocityY(0);
     body.setAccelerationY(0);
@@ -656,6 +978,7 @@ export class GameScene extends Phaser.Scene {
     this.arrowTween?.stop();
     this.arrow.setVisible(false);
     this.state = "playing";
+    musicActive();
     this.hornBlast();
     this.easeWorld(1, 700, "Sine.in");
   }
@@ -708,35 +1031,58 @@ export class GameScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- spawning
 
-  private pickType(): ObstacleType {
-    if (Math.random() < FREIGHTER_CHANCE) return "freighter";
-    return Math.random() < 0.5 ? "rock" : "daycruiser";
+  /**
+   * Random next obstacle. The same vessel never comes twice in a row (it
+   * would look like a repeat); rocks and islands may, since they vary.
+   */
+  private pickType(previous?: ObstacleType): ObstacleType {
+    let type = this.rollType();
+    while (type !== "rock" && type === previous) type = this.rollType();
+    return type;
+  }
+
+  private rollType(): ObstacleType {
+    const roll = Math.random();
+    if (roll < FERRY_CHANCE) return "ferry";
+    if (roll < FERRY_CHANCE + SUOMENLINNA_CHANCE) return "suomenlinna";
+    if (roll < FERRY_CHANCE + SUOMENLINNA_CHANCE + FALKO_CHANCE) return "falko";
+    return "rock"; // the rest: rocks and islands, the archipelago itself
   }
 
   /**
    * Obstacles move at different speeds, so each is timed by when it reaches
-   * the boat: SPAWN_DELAY apart there (stretched around freighters). A minimum
+   * the boat: SPAWN_DELAY apart there (stretched around wide ones and between consecutive rocks). A minimum
    * spawn gap keeps a fast vessel from overlapping a slower one at the edge.
    */
   private scheduleSpawn(type: ObstacleType) {
     const now = this.time.now;
-    const key = type === "rock" ? this.pickRock() : type;
-    const width = this.textures.getFrame(key).width * SCALES[type];
+    const key = type === "rock" ? this.pickRock() : type === "falko" ? "falko_left" : type;
+    const width = this.textures.getFrame(key).width * this.obstacleScale(type);
     const x = GAME_WIDTH + width / 2 + 10; // just off-screen, so nothing pops in
     const travel = ((x - this.boat.x) / SPEEDS[type]) * 1000;
-    const wide = width > WIDE_WIDTH;
+    const wide = width > WIDE_WIDTH * OBJECT_SCALE;
+    const gap = Math.max(wide || this.lastWide ? WIDE_GAP : 1, type === "rock" && this.lastRock ? ROCK_GAP : 1);
     const spawnAt = Math.max(
-      this.lastArrival + SPAWN_DELAY * (wide || this.lastWide ? WIDE_GAP : 1) - travel,
+      this.lastArrival + SPAWN_DELAY * gap - travel,
       this.lastSpawn + MIN_SPAWN_GAP,
       now
     );
     this.spawnTimer = this.time.delayedCall(spawnAt - now, () => {
       this.spawnObstacle(type, key, x);
       this.lastWide = wide;
+      this.lastRock = type === "rock";
       this.lastSpawn = this.time.now;
       this.lastArrival = this.time.now + travel;
-      this.scheduleSpawn(this.pickType());
+      this.scheduleSpawn(this.pickType(type));
     });
+  }
+
+  /** Draw scale for an obstacle: art, hitbox and wake all scale with it. */
+  private obstacleScale(type: ObstacleType) {
+    if (type === "ferry") return (FERRY_WIDTH * OBJECT_SCALE) / this.textures.getFrame("ferry").width;
+    if (type === "suomenlinna") return (SUOMENLINNA_WIDTH * OBJECT_SCALE) / this.textures.getFrame("suomenlinna").width;
+    if (type === "falko") return (FALKO_WIDTH * OBJECT_SCALE) / this.textures.getFrame("falko_left").width;
+    return OBJECT_SCALE;
   }
 
   /** Weighted pick from ROCKS, so big islands are rarer. */
@@ -753,7 +1099,7 @@ export class GameScene extends Phaser.Scene {
     const y = Phaser.Math.Between(SPAWN_MIN_Y, SPAWN_MAX_Y);
 
     const ob = this.hazards.create(x, y, key) as Phaser.Physics.Arcade.Sprite;
-    const scale = SCALES[type];
+    const scale = this.obstacleScale(type);
     ob.setScale(scale);
     const b = ob.body as Body;
     b.setAllowGravity(false);
@@ -769,23 +1115,42 @@ export class GameScene extends Phaser.Scene {
       const bh = spec.rockH * 0.75;
       b.setSize(bw, bh);
       b.setOffset((w - bw) / 2, waterline - bh);
-    } else if (type === "daycruiser") {
-      b.setSize(68, 16);
-      b.setOffset(14, 18);
+    } else if (type === "ferry") {
+      // ferry image (600 px wide): lower hull only, not the superstructure
+      b.setSize(504, 65);
+      b.setOffset(48, 186);
+    } else if (type === "suomenlinna") {
+      // Suomenlinna image (591 x 216): lower white hull and waterline band
+      b.setSize(473, 47);
+      b.setOffset(59, 158);
     } else {
-      b.setSize(150, 26);
-      b.setOffset(16, 30);
+      // Falkö image (1300 x 376, mirrored, cut at the waterline): main hull
+      // below the superstructure
+      b.setSize(1021, 128);
+      b.setOffset(140, 243);
     }
 
     // Hitbox centre sets the draw order against the player's boat.
     // (Body sizes/offsets are in source px and scale with the sprite.)
     ob.setDepth(depthAt(ob.y + scale * (b.offset.y + b.sourceHeight / 2 - ob.displayOriginY)));
-    // Stern offsets are in source px too.
-    if (type === "daycruiser") this.addVesselWake(ob, type, 38 * scale, 10 * scale, scale);
-    else if (type === "freighter") this.addVesselWake(ob, type, 86 * scale, 18 * scale, 1.4 * scale);
+    // Stern and bow waterline points (from the image centre, source px) where
+    // each vessel's wake and bow wave start.
+    if (type === "ferry") {
+      this.addVesselWake(ob, type, 295 * scale, 120 * scale, 1.4 * OBJECT_SCALE);
+      this.addVesselBowWave(ob, type, -277 * scale, 120 * scale, 1.7 * OBJECT_SCALE);
+    } else if (type === "suomenlinna") {
+      this.addVesselWake(ob, type, 290 * scale, 96 * scale, 1.2 * OBJECT_SCALE);
+      this.addVesselBowWave(ob, type, -287 * scale, 96 * scale, 1.5 * OBJECT_SCALE);
+    } else if (type === "falko") {
+      this.addVesselWake(ob, type, 594 * scale, 184 * scale, 1.2 * OBJECT_SCALE);
+      this.addVesselBowWave(ob, type, -565 * scale, 184 * scale, 1.5 * OBJECT_SCALE);
+    }
 
     ob.setData("scored", false);
     ob.setData("type", type);
+    // Vessels sound their horn as they come into view (they spawn just off the
+    // right edge).
+    if (type !== "rock") this.time.delayedCall(600, () => this.state === "playing" && this.shipHorn());
   }
 
   // ---------------------------------------------------------------- loop
@@ -812,6 +1177,7 @@ export class GameScene extends Phaser.Scene {
     this.updateWakes(delta, drift);
     // The boat passes behind obstacles whose hitbox centre is lower on screen.
     if (this.state !== "over") this.boat.setDepth(depthAt((this.boat.body as Body).center.y));
+    this.updateBowWave(delta);
 
     if (this.state === "playing") {
       const body = this.boat.body as Body;
@@ -848,6 +1214,11 @@ export class GameScene extends Phaser.Scene {
           const ctx = this.audio();
           if (ctx) playBloink(ctx);
           this.scoreText.setText(String(this.score));
+          if (this.score === bestScore + 1 && bestScore > 0) {
+            // Just beat the record: the score turns gold, with one gentle pulse.
+            this.scoreText.setColor("#ffd700").setStroke("#6b4c00", 8);
+            this.tweens.add({ targets: this.scoreText, scale: 1.25, duration: 300, yoyo: true, ease: "Sine.inOut" });
+          }
         }
       }
       if (ob.x + ob.displayWidth / 2 < 0) ob.destroy();

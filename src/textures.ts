@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { SEA_TILE, SHEEN_TILE, seaPixels, sheenPixels } from "./sea";
+import { SEA_TILE, SHEEN_TILE, SEA_STYLES, DEFAULT_SEA, clearPixels } from "./sea";
 import { GAME_WIDTH, PANEL_HEIGHT } from "./config";
 
 // Instrument positions on the dashboard, relative to its top-left corner;
@@ -44,6 +44,15 @@ function makeCanvas(scene: Phaser.Scene, key: string, w: number, h: number, pixe
 }
 
 export const FROTH_VARIANTS = 4;
+
+/**
+ * The sea's look, picked with ?sea=<key> in the URL (see SEA_STYLES in
+ * sea.ts). Defaults to storybook_swell.
+ */
+export function seaStyle() {
+  const key = new URLSearchParams(window.location.search).get("sea") ?? DEFAULT_SEA;
+  return SEA_STYLES[key] ?? SEA_STYLES[DEFAULT_SEA];
+}
 
 type Tree = "spruce" | "pine";
 
@@ -525,141 +534,43 @@ export function createTextures(scene: Phaser.Scene) {
     make(scene, spec.key, w, h, (g) => drawSkerry(g, spec));
   }
 
-  // --- White motor daycruiser (100 x 46), side view, bow pointing left ---
-  make(scene, "daycruiser", 100, 46, (g) => {
-    // foam at bow and stern
-    g.fillStyle(0xffffff, 0.35);
-    g.fillEllipse(12, 38, 22, 7);
-    g.fillEllipse(92, 37, 16, 6);
-    // antifouling below the waterline
-    g.fillStyle(0x1f3a5f, 1);
+  // --- Trophy (40 x 44) for the best-score display: gold cup with handles ---
+  make(scene, "trophy", 40, 44, (g) => {
+    const GOLD = 0xf1c40f;
+    const DARK = 0x9a6b05;
+    const LIGHT = 0xffe680;
+    g.lineStyle(4, DARK, 1);
+    g.strokeCircle(8, 14, 6);
+    g.strokeCircle(32, 14, 6);
+    g.fillStyle(DARK, 1);
     g.fillPoints(
       [
-        { x: 12, y: 33 },
-        { x: 88, y: 33 },
-        { x: 88, y: 37 },
-        { x: 24, y: 39 },
+        { x: 7, y: 4 },
+        { x: 33, y: 4 },
+        { x: 29, y: 24 },
+        { x: 11, y: 24 },
       ],
       true
     );
-    // white hull with raked bow
-    const hull = [
-      { x: 3, y: 19 },
-      { x: 88, y: 24 },
-      { x: 88, y: 34 },
-      { x: 14, y: 34 },
-    ];
-    g.fillStyle(0xf7f9fa, 1);
-    g.fillPoints(hull, true);
-    g.lineStyle(1.5, 0x8fa3ad, 1);
-    g.strokePoints(hull, true);
-    g.lineStyle(2, 0x2e86c1, 1);
-    g.lineBetween(10, 29, 88, 30);
-    // cabin with raked windscreen
-    const cabin = [
-      { x: 34, y: 21 },
-      { x: 46, y: 10 },
-      { x: 70, y: 10 },
-      { x: 73, y: 23 },
-    ];
-    g.fillStyle(0xeef2f3, 1);
-    g.fillPoints(cabin, true);
-    g.lineStyle(1.5, 0x8fa3ad, 1);
-    g.strokePoints(cabin, true);
-    g.fillStyle(0x2c3e50, 1);
+    g.fillStyle(GOLD, 1);
     g.fillPoints(
       [
-        { x: 39, y: 20 },
-        { x: 47, y: 13 },
-        { x: 56, y: 13 },
-        { x: 56, y: 20 },
+        { x: 9, y: 6 },
+        { x: 31, y: 6 },
+        { x: 27.5, y: 22.5 },
+        { x: 12.5, y: 22.5 },
       ],
       true
     );
-    g.fillPoints(
-      [
-        { x: 59, y: 13 },
-        { x: 68, y: 13 },
-        { x: 70, y: 21 },
-        { x: 59, y: 21 },
-      ],
-      true
-    );
-    // bow rail
-    g.lineStyle(1.5, 0xb0bec5, 1);
-    g.lineBetween(6, 15, 34, 17);
-    g.lineBetween(12, 15.5, 12, 19.5);
-    g.lineBetween(22, 16, 22, 20);
-    // outboard motor at the stern
-    g.fillStyle(0x2d3436, 1);
-    g.fillRect(88, 18, 8, 13);
-    g.fillRect(90, 31, 3, 8);
-    g.fillStyle(0x636e72, 1);
-    g.fillRect(88, 18, 8, 3);
-  });
-
-  // --- Small coastal freighter (180 x 72), side view, bow pointing left ---
-  make(scene, "freighter", 180, 72, (g) => {
-    // foam at bow and stern
-    g.fillStyle(0xffffff, 0.35);
-    g.fillEllipse(14, 62, 28, 8);
-    g.fillEllipse(172, 60, 18, 6);
-    // containers on deck, two tiers of random colours
-    const boxColors = [0x2e86c1, 0xe67e22, 0x27ae60, 0xd5dbdb, 0xc0392b];
-    for (let tier = 0; tier < 2; tier++) {
-      for (let i = 0; i < 5; i++) {
-        g.fillStyle(Phaser.Utils.Array.GetRandom(boxColors), 1);
-        g.fillRect(36 + i * 19, 30 - tier * 9, 18, 8);
-      }
-    }
-    g.lineStyle(1, 0x1c2833, 0.6);
-    g.strokeRect(36, 21, 95, 17);
-    // foremast
-    g.lineStyle(2, 0xf1c40f, 1);
-    g.lineBetween(20, 35, 20, 14);
-    // oxblood hull with raked bow and raised forecastle
-    const hull = [
-      { x: 2, y: 30 },
-      { x: 28, y: 36 },
-      { x: 176, y: 38 },
-      { x: 176, y: 60 },
-      { x: 20, y: 60 },
-    ];
-    g.fillStyle(0x8e2b23, 1);
-    g.fillPoints(hull, true);
-    g.lineStyle(1.5, 0x4a1410, 1);
-    g.strokePoints(hull, true);
-    // black boot-top at the waterline
-    g.fillStyle(0x1c1c1c, 1);
-    g.fillPoints(
-      [
-        { x: 17, y: 54 },
-        { x: 176, y: 54 },
-        { x: 176, y: 60 },
-        { x: 20, y: 60 },
-      ],
-      true
-    );
-    g.lineStyle(1.5, 0xecf0f1, 1);
-    g.lineBetween(30, 40, 176, 41);
-    // white superstructure at the stern
-    g.fillStyle(0xf4f6f7, 1);
-    g.fillRect(138, 20, 32, 18);
-    g.fillRect(134, 12, 38, 9);
-    g.lineStyle(1, 0x95a5a6, 1);
-    g.strokeRect(138, 20, 32, 18);
-    g.strokeRect(134, 12, 38, 9);
-    g.fillStyle(0x2c3e50, 1);
-    g.fillRect(136, 14, 34, 4);
-    for (let i = 0; i < 4; i++) g.fillRect(142 + i * 7, 26, 4, 4);
-    // funnel and radar mast
-    g.fillStyle(0x2c3e50, 1);
-    g.fillRect(160, 1, 9, 11);
-    g.fillStyle(0xc0392b, 1);
-    g.fillRect(160, 4, 9, 3);
-    g.lineStyle(1.5, 0x7f8c8d, 1);
-    g.lineBetween(146, 12, 146, 3);
-    g.lineBetween(142, 5, 150, 5);
+    g.fillStyle(LIGHT, 1);
+    g.fillRect(13, 8, 4, 12);
+    // stem and base
+    g.fillStyle(DARK, 1);
+    g.fillRect(17, 24, 6, 9);
+    g.fillRect(10, 33, 20, 8);
+    g.fillStyle(GOLD, 1);
+    g.fillRect(18.5, 24, 3, 9);
+    g.fillRect(12, 35, 16, 4);
   });
 
   // --- Music toggle icons (56 x 56): beamed notes on a dark disc; the
@@ -728,8 +639,12 @@ export function createTextures(scene: Phaser.Scene) {
 
   // --- Tileable dark Baltic sea and its ripple-sparkle overlay, see sea.ts ---
   // (guarded here too: building the pixel fields is the slow part)
-  if (!scene.textures.exists("sea")) makeCanvas(scene, "sea", SEA_TILE, SEA_TILE, seaPixels());
-  if (!scene.textures.exists("sea_sheen")) makeCanvas(scene, "sea_sheen", SHEEN_TILE, SHEEN_TILE, sheenPixels());
+  const style = seaStyle();
+  if (!scene.textures.exists("sea")) makeCanvas(scene, "sea", SEA_TILE, SEA_TILE, style.sea());
+  if (!scene.textures.exists("sea_sheen")) {
+    if (style.sheen) makeCanvas(scene, "sea_sheen", SHEEN_TILE, SHEEN_TILE, style.sheen());
+    else makeCanvas(scene, "sea_sheen", 8, 8, clearPixels); // style without sparkle
+  }
 
   // --- Water droplet (10 x 10) for the sinking splash: hard-edged so it
   // reads as water, not smoke ---
