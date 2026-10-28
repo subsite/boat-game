@@ -50,7 +50,7 @@ when changing anything.
   `sea`, `sea_sheen`,
   `foam_ring`. Add new art
   here, not as an image import. The one exception is the player boat,
-  `public/falko.png` (mirrored with its name painted out into `falko_left.png`
+  `inbox/falko-cut.png` (hand-cut at the waterline, mirrored with its name painted out into `public/falko_left.png`
   by `tools/art/mirror_falko.py`, loaded as the `falko` obstacle) and the ferry Utö,
   `public/ferry.png` (`ferry`; cleaned and downscaled from `inbox/uto2-left.png`
   with the mirrored lettering painted out), and `public/suomenlinna.png`
@@ -137,7 +137,7 @@ divide display-px values by `scaleX/scaleY`.
   `WIDE_GAP` around obstacles wider than `WIDE_WIDTH`, and by `ROCK_GAP`
   between consecutive rocks/islands), with `MIN_SPAWN_GAP` so a fast
   vessel never overlaps a slow one at the edge. Random Y, immovable, no gravity. Each type
-  (`rock`/`ferry`/`suomenlinna`/`vejde`/`falko`) sets a **hitbox smaller than its art** for
+  (`rock`/`ferry`/`suomenlinna`/`falko`) sets a **hitbox smaller than its art** for
   forgiving collisions. Scoring/culling happens in `updateScoreAndCull`.
 - **Draw order**: boats and obstacles are painter-sorted with
   `depthAt(hitbox centre y)` (between 1 and 2), so the player's boat passes

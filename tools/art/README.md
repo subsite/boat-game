@@ -9,7 +9,7 @@ background):
 cd tools/art
 python3 draw_suomenlinna.py ../../public/suomenlinna.png /tmp/suomenlinna_preview.png
 python3 draw_vejde.py ../../public/vejde_right.png /tmp/vejde_preview.png
-python3 mirror_falko.py ../../public/falko.png ../../public/falko_left.png
+python3 mirror_falko.py ../../inbox/falko-cut.png ../../public/falko_left.png
 python3 draw_buster.py ../../inbox/buster-xl.png ../../public/buster.png /tmp/buster_preview.png
 ```
 

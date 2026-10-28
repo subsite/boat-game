@@ -314,26 +314,65 @@ export class GameScene extends Phaser.Scene {
   /** Dress the player sprite as the chosen boat: art, size, hitbox, bounds. */
   private applyBoat() {
     const spec = this.boatSpec;
-    this.boat.setTexture(spec.key);
-    this.boat.setScale((spec.width * OBJECT_SCALE) / this.boat.frame.width);
+    // Draw from a copy pre-shrunk to the on-screen size (smooth edges); the
+    // spec's points are in original-image px, so convert them by `r`.
+    const width = spec.width * OBJECT_SCALE;
+    this.boat.setTexture(this.smoothTexture(spec.key, width));
+    const r = this.boatTexRatio();
+    this.boat.setScale(width / this.boat.frame.width);
     // Hitbox covers the main hull only, for forgiving collisions. Arcade takes
-    // these in source-image px and scales them with the sprite.
+    // these in texture px and scales them with the sprite.
     const [hx, hy, hw, hh] = spec.hit;
     const body = this.boat.body as Body;
-    body.setSize(hw, hh, false);
-    body.setOffset(hx, hy);
+    body.setSize(hw * r, hh * r, false);
+    body.setOffset(hx * r, hy * r);
     // Bounds keep the boat inside the play area (it clamps to the edges instead
     // of dying there — the only way to fail is touching an obstacle). The
     // bottom is raised by the art below the hitbox, so the hull's visual
     // bottom lands on the deck line rather than crossing it.
-    const below = (this.boat.frame.height - hy - hh) * this.boat.scaleY;
+    const below = (this.boat.frame.height - (hy + hh) * r) * this.boat.scaleY;
     this.physics.world.setBounds(0, 0, GAME_WIDTH, PLAY_HEIGHT - below);
+  }
+
+  /** Player texture px per original-image px (the texture is a shrunk copy). */
+  private boatTexRatio() {
+    return this.boat.frame.width / this.textures.getFrame(this.boatSpec.key).width;
+  }
+
+  /**
+   * A copy of an image shrunk to `width` px with high-quality smoothing, in
+   * halving steps. Shrinking a big image a lot on the GPU each frame samples
+   * only a few of its pixels and leaves jagged edges; drawing a copy at its
+   * on-screen size gives smooth, anti-aliased ones. Cached in the texture
+   * manager, so it is made once per size.
+   */
+  private smoothTexture(key: string, width: number) {
+    const target = Math.max(1, Math.round(width));
+    const out = `${key}@${target}`;
+    if (this.textures.exists(out)) return out;
+    const src = this.textures.get(key).getSourceImage() as HTMLImageElement;
+    const step = (from: CanvasImageSource, w: number, h: number) => {
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      const ctx = c.getContext("2d")!;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(from, 0, 0, w, h);
+      return c;
+    };
+    let canvas = step(src, src.width, src.height);
+    while (canvas.width / 2 > target) canvas = step(canvas, Math.ceil(canvas.width / 2), Math.ceil(canvas.height / 2));
+    canvas = step(canvas, target, Math.max(1, Math.round((src.height * target) / src.width)));
+    this.textures.addCanvas(out, canvas);
+    return out;
   }
 
   /** A point on the player's boat in source-image px, as world coordinates (follows its tilt). */
   private boatPoint(px: number, py: number) {
-    const ox = (px - this.boat.frame.width / 2) * this.boat.scaleX;
-    const oy = (py - this.boat.frame.height / 2) * this.boat.scaleY;
+    const r = this.boatTexRatio();
+    const ox = (px * r - this.boat.frame.width / 2) * this.boat.scaleX;
+    const oy = (py * r - this.boat.frame.height / 2) * this.boat.scaleY;
     const c = Math.cos(this.boat.rotation);
     const s = Math.sin(this.boat.rotation);
     return { x: this.boat.x + c * ox - s * oy, y: this.boat.y + s * ox + c * oy };
@@ -356,8 +395,9 @@ export class GameScene extends Phaser.Scene {
     this.pickerCards = PLAYER_BOATS.map((spec, i) => {
       const x = x0 + i * (cardW + gap);
       const card = this.add.graphics();
-      const thumb = this.add.image(x + cardW / 2, y + cardH / 2, spec.key);
-      thumb.setScale(Math.min((cardW - 16) / thumb.width, (cardH - 16) / thumb.height));
+      const src = this.textures.getFrame(spec.key);
+      const fit = Math.min((cardW - 16) / src.width, (cardH - 16) / src.height);
+      const thumb = this.add.image(x + cardW / 2, y + cardH / 2, this.smoothTexture(spec.key, src.width * fit));
       const hit = this.add
         .zone(x, y, cardW, cardH)
         .setOrigin(0)
@@ -1124,9 +1164,9 @@ export class GameScene extends Phaser.Scene {
       b.setSize(473, 47);
       b.setOffset(59, 158);
     } else {
-      // Falkö image (1300 x 376, mirrored, cut at the waterline): main hull
+      // Falkö image (1300 x 393, mirrored, cut at the waterline): main hull
       // below the superstructure
-      b.setSize(1021, 128);
+      b.setSize(1021, 145);
       b.setOffset(140, 243);
     }
 
@@ -1142,8 +1182,8 @@ export class GameScene extends Phaser.Scene {
       this.addVesselWake(ob, type, 290 * scale, 96 * scale, 1.2 * OBJECT_SCALE);
       this.addVesselBowWave(ob, type, -287 * scale, 96 * scale, 1.5 * OBJECT_SCALE);
     } else if (type === "falko") {
-      this.addVesselWake(ob, type, 594 * scale, 184 * scale, 1.2 * OBJECT_SCALE);
-      this.addVesselBowWave(ob, type, -565 * scale, 184 * scale, 1.5 * OBJECT_SCALE);
+      this.addVesselWake(ob, type, 593 * scale, 194 * scale, 1.2 * OBJECT_SCALE);
+      this.addVesselBowWave(ob, type, -532 * scale, 194 * scale, 1.5 * OBJECT_SCALE);
     }
 
     ob.setData("scored", false);
