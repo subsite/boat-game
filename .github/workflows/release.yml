@@ -70,6 +70,8 @@ jobs:
       - name: Generate Android project
         run: |
           npx cap add android
+          # App icon (tools/art/draw_icon.py) over Capacitor's default one.
+          cp -r resources/android/res/. android/app/src/main/res/
           GRADLE=android/app/build.gradle
           sed -i -E "s/versionCode [0-9]+/versionCode $VERSION_CODE/; s/versionName \"[^\"]*\"/versionName \"$VERSION\"/" "$GRADLE"
           grep -q "versionCode $VERSION_CODE" "$GRADLE" && grep -q "versionName \"$VERSION\"" "$GRADLE" || {

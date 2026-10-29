@@ -22,8 +22,11 @@ cannot be live click-tested here; rely on the build and on the user running
 
 Native projects (`android/`, `ios/`) are gitignored and generated on the host
 with `npx cap add android|ios`. Release APKs are built by
-`.github/workflows/release.yml` on pushing a `vX.Y.Z` tag: it runs
-`npx cap add android` itself, stamps versionCode/versionName into the
+`.github/workflows/release.yml` on pushing a `vX.Y.Z` tag (`npm run release
+[patch|minor|major|vX.Y.Z]` → `scripts/release.sh` picks the next tag and
+pushes main + tag; the user runs it on the host): it runs
+`npx cap add android` itself, copies the app icon from `resources/android/res/`
+over it (`npm run cap:icons` does the same on the host), stamps versionCode/versionName into the
 generated `build.gradle`, and signs with keystore secrets (see README). Capacitor commands and Docker are not available
 in the container (see global instructions) — the user runs those.
 
@@ -58,7 +61,10 @@ when changing anything.
   bow-up as if planing, with a captain) and `public/buster.png` (with a granny): flat schematics drawn with Pillow by the scripts in `tools/art/`
   from reference photos in `inbox/` (not committed). Re-render with those
   scripts rather than editing the PNGs; hitbox/stern offsets for each image
-  are in `spawnObstacle`.
+  are in `spawnObstacle`. The app icon (Android launcher mipmaps in
+  `resources/android/res/`, favicon `public/icon.png`) is the Vejde on the
+  game's sea, rendered by `tools/art/draw_icon.py`; re-run it after changing
+  the Vejde or the default sea.
 - **Sizes**: `OBJECT_SCALE` scales the player boat and every obstacle (art,
   hitbox, wake, splash), never the dashboard/wheel, which keep their size so
   the sea gets the space. Size-dependent offsets in the scene multiply by it,
