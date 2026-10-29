@@ -39,3 +39,6 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Reference photos and drafts (see tools/art); never committed
+/inbox/
