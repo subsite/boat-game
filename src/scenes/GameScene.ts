@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { Capacitor } from "@capacitor/core";
 import { createTextures, ROCKS, rockLayout, FROTH_VARIANTS, DASH_GAUGES, seaStyle } from "../textures";
 import { playBloink, playBoatHorn, playShipHorn, playSink } from "../sfx";
 import { isMusicMuted, musicActive, musicIdle, setMusicMuted, startMusic } from "../music";
@@ -27,6 +28,7 @@ import {
   GRAVITY,
   THRUST,
   MAX_FALL,
+  ABOUT_URL,
 } from "../config";
 
 type Body = Phaser.Physics.Arcade.Body;
@@ -94,6 +96,15 @@ const PLAYER_BOATS: PlayerBoat[] = [
 
 // Best score per player boat, kept on the device. Loaded lazily, on first
 // use, so the one-time migration below can see the chosen boat.
+/**
+ * Open the project page outside the game: in the app, a plain navigation is
+ * handed by Capacitor to the system browser; on the web, a new tab.
+ */
+function openAbout() {
+  if (Capacitor.isNativePlatform()) window.location.href = ABOUT_URL;
+  else window.open(ABOUT_URL, "_blank", "noopener");
+}
+
 const BEST_KEY = "boatgame.bestByBoat";
 const OLD_BEST_KEY = "boatgame.best"; // the single record from before per-boat scores
 let bests: Record<string, number> | null = null;
@@ -407,6 +418,23 @@ export class GameScene extends Phaser.Scene {
       this.picker.add([card, thumb, trophy, count, hit]);
       return card;
     });
+    // Small "About" link in the lower right corner, away from the wheel and
+    // the cards, to the project page. Part of the picker, so only on the
+    // start screen.
+    const about = this.add
+      .text(GAME_WIDTH - 12, PLAY_HEIGHT - 10, "About", {
+        fontFamily: "Arial, sans-serif",
+        fontSize: "16px",
+        color: "#ffffff",
+        stroke: "#1c3d5a",
+        strokeThickness: 4,
+      })
+      .setOrigin(1, 1)
+      .setAlpha(0.75)
+      .setPadding(10, 8, 0, 0) // a bit more to tap than the word itself
+      .setInteractive({ useHandCursor: true });
+    about.on("pointerdown", openAbout);
+    this.picker.add(about);
     this.input.keyboard?.on("keydown-LEFT", () => this.chooseBoat((chosenBoat + n - 1) % n));
     this.input.keyboard?.on("keydown-RIGHT", () => this.chooseBoat((chosenBoat + 1) % n));
     this.drawPicker();

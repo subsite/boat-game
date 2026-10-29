@@ -49,3 +49,6 @@ export const SPAWN_MAX_Y = PLAY_HEIGHT - 100;
 export const GRAVITY = 620; // downward pull when not steering up
 export const THRUST = 1500; // upward acceleration while the wheel is held
 export const MAX_FALL = 360; // clamp speeds so motion stays readable
+
+// Project page, opened by the small "About" link on the start screen.
+export const ABOUT_URL = "https://github.com/subsite/boat-game";

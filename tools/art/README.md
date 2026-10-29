@@ -12,6 +12,7 @@ python3 draw_vejde.py ../../public/vejde_right.png /tmp/vejde_preview.png
 python3 mirror_falko.py ../../inbox/falko-cut.png ../../public/falko_left.png
 python3 draw_buster.py ../../inbox/buster-xl.png ../../public/buster.png /tmp/buster_preview.png
 python3 draw_icon.py ../.. /tmp/icon_preview.png
+python3 draw_splash.py ../.. /tmp/splash_preview.png
 ```
 
 - `draw_vejde.py` draws the Vejde bow-left (like the photo, preview too),
@@ -26,6 +27,11 @@ python3 draw_icon.py ../.. /tmp/icon_preview.png
   from `src/sea.ts` by `sea_tile.ts`, so it needs node) and writes the
   Android launcher icons (adaptive layers plus legacy square/round) to
   `resources/android/res/` and the favicon `public/icon.png`.
+
+- `draw_splash.py` makes the loading screen: every boat image (from
+  `public/`, so re-run it after changing one) on the game's sea with the
+  title. It writes the Android launch screen to `resources/android/res/`
+  and `public/splash.png` + `public/splash-sea.png` for `index.html`.
 
 If an image's size or layout changes, update its hitbox and stern (wake)
 offsets in `spawnObstacle` in `src/scenes/GameScene.ts`; `draw_vejde.py`

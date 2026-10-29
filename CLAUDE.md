@@ -26,7 +26,7 @@ with `npx cap add android|ios`. Release APKs are built by
 [patch|minor|major|vX.Y.Z]` → `scripts/release.sh` picks the next tag and
 pushes main + tag; the user runs it on the host): it runs
 `npx cap add android` itself, patches it with `scripts/patch-android.sh` (app
-icon from `resources/android/res/`, MainActivity locked to portrait; `npm run
+icon and launch screen from `resources/android/res/`, MainActivity locked to portrait; `npm run
 cap:patch` does the same on the host), stamps versionCode/versionName into the
 generated `build.gradle`, and signs with keystore secrets (see README). Capacitor commands and Docker are not available
 in the container (see global instructions) — the user runs those.
@@ -65,7 +65,13 @@ when changing anything.
   are in `spawnObstacle`. The app icon (Android launcher mipmaps in
   `resources/android/res/`, favicon `public/icon.png`) is the Vejde on the
   game's sea, rendered by `tools/art/draw_icon.py`; re-run it after changing
-  the Vejde or the default sea.
+  the Vejde or the default sea. The loading screen is a collage of every
+  boat on the sea with the title, by `tools/art/draw_splash.py`: on Android
+  it is the launch screen (`drawable/splash.xml`, older Android; 12+ shows
+  the icon on the sea colour), on the web the `#loading` overlay in
+  `index.html` (`public/splash.png`, `public/splash-sea.png`), which
+  `main.ts` fades out once `GameScene` has run `create()`. Re-run it after
+  changing a boat image.
 - **Sizes**: `OBJECT_SCALE` scales the player boat and every obstacle (art,
   hitbox, wake, splash), never the dashboard/wheel, which keep their size so
   the sea gets the space. Size-dependent offsets in the scene multiply by it,
@@ -132,7 +138,9 @@ divide display-px values by `scaleX/scaleY`.
   and the bow wave/spray drawn by `updateBowWave` from each boat's `bow`
   contact point). The Vejde's captain and the Buster's granny are part of
   their images (`tools/art`).
-  The start ("ready") screen shows a card picker (tap or Left/Right); the
+  The start ("ready") screen shows a card picker (tap or Left/Right) and a
+  small "About" link (lower right) to `ABOUT_URL`, the GitHub page, which
+  opens in the system browser (app) or a new tab (web); the
   choice is module-level plus localStorage, so it survives restarts — which
   return to the ready screen, so the picker also shows after sinking.
 - **Boat physics**: gravity is enabled only while `playing`. `setAccelerationY`

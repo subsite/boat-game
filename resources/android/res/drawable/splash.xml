@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch screen (Android < 12): the sea tiled, the collage centred. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap android:src="@drawable/splash_sea" android:tileMode="repeat"/>
+    </item>
+    <item>
+        <bitmap android:src="@drawable/splash_art" android:gravity="center"/>
+    </item>
+</layer-list>

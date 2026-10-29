@@ -9,9 +9,20 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+      /* Loading screen while the game builds its art (tools/art/draw_splash.py):
+         the same sea and collage as the Android launch screen. */
+      #loading {
+        position: fixed; inset: 0; z-index: 1;
+        display: flex; justify-content: center; align-items: center;
+        background: #11394a url(./splash-sea.png) repeat center / 171px;
+        transition: opacity 0.4s;
+      }
+      #loading img { width: min(89vw, 420px); max-height: 85vh; object-fit: contain; }
+      #loading.done { opacity: 0; }
     </style>
   </head>
   <body>
+    <div id="loading"><img src="./splash.png" alt="Boat Game" /></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
