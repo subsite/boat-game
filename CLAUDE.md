@@ -25,8 +25,9 @@ with `npx cap add android|ios`. Release APKs are built by
 `.github/workflows/release.yml` on pushing a `vX.Y.Z` tag (`npm run release
 [patch|minor|major|vX.Y.Z]` → `scripts/release.sh` picks the next tag and
 pushes main + tag; the user runs it on the host): it runs
-`npx cap add android` itself, copies the app icon from `resources/android/res/`
-over it (`npm run cap:icons` does the same on the host), stamps versionCode/versionName into the
+`npx cap add android` itself, patches it with `scripts/patch-android.sh` (app
+icon from `resources/android/res/`, MainActivity locked to portrait; `npm run
+cap:patch` does the same on the host), stamps versionCode/versionName into the
 generated `build.gradle`, and signs with keystore secrets (see README). Capacitor commands and Docker are not available
 in the container (see global instructions) — the user runs those.
 

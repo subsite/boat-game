@@ -38,9 +38,10 @@ npm run cap:ios         # build + sync + open Xcode
 ```
 
 `npm run cap:sync` rebuilds the web bundle and copies it into the native projects.
-`npm run cap:icons` copies the app icon (`resources/android/res/`, drawn by
-`tools/art/draw_icon.py`) over Capacitor's default one; `cap:android` runs it
-for you.
+`npm run cap:patch` (`scripts/patch-android.sh`) customises the generated
+`android/`: it copies in the app icon (`resources/android/res/`, drawn by
+`tools/art/draw_icon.py`) and locks the game to portrait; `cap:android` runs
+it for you.
 
 ## Releases
 
@@ -59,8 +60,8 @@ By hand, that is `git push origin main && git tag v1.0.0 && git push origin v1.0
 - Tags must be `vMAJOR.MINOR.PATCH`, with MINOR and PATCH below 100. The
   Android versionCode is `MAJOR*10000 + MINOR*100 + PATCH`, so every release
   needs a higher version than the last.
-- The workflow generates `android/` fresh (it is gitignored), copies in the
-  app icon, stamps the version into it, builds, then signs with the release key.
+- The workflow generates `android/` fresh (it is gitignored), patches it
+  (`scripts/patch-android.sh`: app icon, portrait only), stamps the version into it, builds, then signs with the release key.
 
 ### Signing (one-time setup)
 
